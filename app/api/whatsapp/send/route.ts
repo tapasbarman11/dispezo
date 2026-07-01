@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 
 import { authOptions } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
-import { getConnection } from "@/lib/api/whatsapp/service";
+import { getConnectionByOrganization } from "@/lib/api/whatsapp/service";
 import { metaPOST } from "@/lib/meta/client";
 import pool from "@/lib/db";
 
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const organizationId = (session.user as any).organizationId;
 
-    const account = await getConnection(
+    const account = await getConnectionByOrganization(
       organizationId
     );
 

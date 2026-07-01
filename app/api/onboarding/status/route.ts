@@ -59,9 +59,21 @@ export async function GET() {
     const organizationCount =
       orgResult.rows[0].count;
 
-    // TEMPORARY
-    // Replace later with actual whatsapp_accounts table
-    const whatsappCount = 0;
+    const whatsappResult = await pool.query(
+      `
+  SELECT COUNT(*)::int AS count
+  FROM whatsapp_accounts
+  WHERE organization_id IN (
+      SELECT id
+      FROM organizations
+      WHERE owner_user_id = $1
+  )
+  `,
+      [user.id]
+    );
+
+    const whatsappCount =
+      whatsappResult.rows[0].count;
 
     let completedSteps = 0;
 

@@ -170,7 +170,7 @@ export default function OnboardingWizard() {
           const whatsapp = await whatsappResponse.json();
 
           whatsappConnected =
-            whatsapp.whatsappConnected === true;
+             whatsapp.whatsappCount > 0;
 
           setData((prev) => ({
             ...prev,
@@ -181,6 +181,15 @@ export default function OnboardingWizard() {
         // ===========================
         // AUTO RESUME
         // ===========================
+
+        if (
+          profileCompleted &&
+          businessCompleted &&
+          whatsappConnected
+        ) {
+          window.location.replace("/whatsapp");
+          return;
+        }
 
         if (
           profileCompleted &&
@@ -196,6 +205,7 @@ export default function OnboardingWizard() {
         } else {
           setStep(1);
         }
+
         setLoading(false);
       } catch (error) {
         console.error(
@@ -479,44 +489,45 @@ export default function OnboardingWizard() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
+              {step !== 3 && (
+                <div className="flex items-center gap-3">
 
+                  <button
+                    onClick={handleSkip}
+                    className="px-5 py-2 rounded-lg border border-[#d1d5db] text-sm font-medium"
+                  >
+                    Skip
+                  </button>
+
+                  <button
+                    onClick={handleContinue}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-6 py-2 rounded-lg bg-violet-600 text-white"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+
+                </div>
+              )}
+
+              {step === 3 && (
                 <button
                   onClick={handleSkip}
                   className="px-5 py-2 rounded-lg border border-[#d1d5db] text-sm font-medium"
                 >
                   Skip
                 </button>
-
-                <button
-                  onClick={handleContinue}
-                  disabled={saving}
-                  className={cn(
-                    'flex items-center gap-2 px-6 py-2 rounded-lg text-white',
-                    step === 3
-                      ? 'bg-green-600'
-                      : 'bg-violet-600'
-                  )}
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : step === 3 ? (
-                    <>
-                      Finish
-                      <CheckCircle2 className="w-4 h-4" />
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-
-              </div>
+              )}
             </div>
           </div>
         </div>
