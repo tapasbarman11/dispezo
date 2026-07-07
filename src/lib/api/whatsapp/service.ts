@@ -1,4 +1,4 @@
-import { encrypt } from "@/lib/crypto";
+import { encrypt, decrypt, } from "@/lib/crypto";
 import { verifyWhatsAppConnection } from "@/lib/meta/status";
 
 import {
@@ -28,7 +28,8 @@ export async function saveConnection(
     accessToken,
     wabaId
   );
-
+console.log("SERVICE META");
+console.log(meta);
   const encryptedToken = encrypt(accessToken);
 
   const connection = await saveConnectionRepository({
@@ -69,24 +70,52 @@ export async function getConnectionByOrganization(
 export async function refreshConnection(
   organizationId: string
 ) {
-  const connection = await getConnection(
-    organizationId
-  );
+  const connection =
+    await getConnection(
+      organizationId
+    );
 
   if (!connection) {
+
     throw new Error(
       "WhatsApp account not found."
     );
+
   }
+
+  const accessToken =
+    decrypt(connection.access_token);
+
+  const meta =
+    await verifyWhatsAppConnection(
+      accessToken,
+      connection.waba_id
+    );
 
   await updateConnection(
     organizationId,
     {
-      quality_rating: connection.quality_rating,
-      messaging_limit: connection.messaging_limit,
+      meta_business_name:
+        meta.businessName,
+
+      display_name:
+        meta.verifiedName,
+
+      phone_number:
+        meta.displayPhoneNumber,
+
+      quality_rating:
+        meta.qualityRating,
+
+      messaging_limit:
+        meta.messagingLimit,
+
       status: "connected",
+
       webhook_status: "active",
-      last_synced_at: new Date(),
+
+      last_synced_at:
+        new Date(),
     }
   );
 

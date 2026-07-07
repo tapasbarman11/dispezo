@@ -169,6 +169,9 @@ NOW()
 export async function updateConnection(
   organizationId: string,
   updates: Partial<{
+    meta_business_name: string;
+    display_name: string;
+    phone_number: string;
     quality_rating: string;
     messaging_limit: string;
     status: string;
@@ -188,7 +191,8 @@ export async function updateConnection(
   if (!fields.length) return;
 
   values.unshift(organizationId);
-
+console.log("UPDATE VALUES");
+console.log(updates);
   await pool.query(
     `
     UPDATE whatsapp_accounts

@@ -1,7 +1,6 @@
 import { metaGET } from "./client";
 
 export interface WhatsAppConnectionInfo {
-
   wabaId: string;
   phoneNumberId: string;
   displayPhoneNumber: string;
@@ -26,8 +25,15 @@ interface PhoneResponse {
     verified_name: string;
     quality_rating?: string;
     status?: string;
+    whatsapp_business_manager_messaging_limit?: string;
   }[];
 }
+
+interface WabaResponse {
+  id: string;
+  name: string;
+}
+
 interface TemplateResponse {
   data: {
     id: string;
@@ -35,6 +41,10 @@ interface TemplateResponse {
     status: string;
     category: string;
     language: string;
+    components?: {
+      type: string;
+      text?: string;
+    }[];
   }[];
 }
 
@@ -64,7 +74,9 @@ export async function verifyWhatsAppConnection(
   }
 
   if (!debug.data.app_id) {
-    throw new Error("Access token is not associated with any Meta application.");
+    throw new Error(
+      "Access token is not associated with any Meta application."
+    );
   }
 
   // --------------------------------------------------
@@ -74,7 +86,7 @@ export async function verifyWhatsAppConnection(
   console.log("STEP 2 - Fetch Phone Numbers");
 
   const phones = await metaGET<PhoneResponse>(
-    `/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status`,
+    `/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status,whatsapp_business_manager_messaging_limit`,
     accessToken
   );
 
@@ -88,18 +100,33 @@ export async function verifyWhatsAppConnection(
   const phone = phones.data[0];
 
   // --------------------------------------------------
+  // STEP 2A - Fetch Business Account
+  // --------------------------------------------------
+
+  console.log("STEP 2A - Fetch Business Account");
+
+  const waba = await metaGET<WabaResponse>(
+    `/${wabaId}?fields=name`,
+    accessToken
+  );
+
+  console.log("STEP 2A SUCCESS");
+  console.log(JSON.stringify(waba, null, 2));
+
+  // --------------------------------------------------
   // STEP 3 - Verify Template Access
   // --------------------------------------------------
 
   console.log("STEP 3 - Fetch Templates");
 
   const templates = await metaGET<TemplateResponse>(
-    `/${wabaId}/message_templates?fields=id,name,status,category,language`,
+    `/${wabaId}/message_templates?fields=id,name,status,category,language,components`,
     accessToken
   );
 
   console.log("STEP 3 SUCCESS");
   console.log(JSON.stringify(templates, null, 2));
+
   if (!templates.data) {
     throw new Error("Unable to access WhatsApp templates.");
   }
@@ -107,13 +134,14 @@ export async function verifyWhatsAppConnection(
   console.log("========== VERIFY SUCCESS ==========");
 
   return {
-    businessId: "",
-    businessName: "",
+    businessId: waba.id,
+    businessName: waba.name,
     wabaId,
     phoneNumberId: phone.id,
     displayPhoneNumber: phone.display_phone_number,
     verifiedName: phone.verified_name,
-    qualityRating: phone.quality_rating || "UNKNOWN",
-    messagingLimit: "UNKNOWN",
+    qualityRating: phone.quality_rating ?? "UNKNOWN",
+    messagingLimit:
+      phone.whatsapp_business_manager_messaging_limit ?? "",
   };
 }

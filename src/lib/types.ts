@@ -62,7 +62,7 @@ export const COUNTRIES = [
 ];
 
 export const BUSINESS_TYPES = [
-    { id: "ecommerce", label: "E-Commerce", icon: "🛒" },
+  { id: "ecommerce", label: "E-Commerce", icon: "🛒" },
   { id: "finance", label: "Finance", icon: "🏦" },
   { id: "healthcare", label: "Healthcare", icon: "🏥" },
   { id: "education", label: "Education", icon: "🎓" },
@@ -78,3 +78,75 @@ export const BUSINESS_TYPES = [
   { id: "manufacturing", label: "Manufacturing", icon: "🏭" },
   { id: "other", label: "Other", icon: "⚡" },
 ];
+
+export interface Template {
+
+  id: string;
+
+  organizationId: string;
+
+  name: string;
+
+  category: string;
+
+  language: string;
+
+  headerType?: string | null;
+
+  headerText?: string | null;
+
+  headerImage?: string | null;
+  sampleMediaPath?: string;
+  sampleMediaName?: string;
+  sampleMediaType?: string;
+
+  body: string;
+
+  footer?: string | null;
+
+  buttons: any[];
+
+  metaTemplateId?: string | null;
+
+  status: string;
+
+  isPublished: boolean;
+
+  version: number;
+
+  publishedAt?: Date | null;
+
+  lastSyncedAt?: Date | null;
+
+  createdAt: Date;
+
+  updatedAt: Date;
+
+}
+
+export interface SaveTemplateInput {
+
+  organizationId: string;
+
+  name: string;
+
+  category: string;
+
+  language: string;
+
+  headerType?: string;
+
+  headerText?: string;
+
+  headerImage?: string;
+  sampleMediaPath?: string;
+  sampleMediaName?: string;
+  sampleMediaType?: string;
+
+  body: string;
+
+  footer?: string;
+
+  buttons?: any;
+
+}

@@ -1,5 +1,6 @@
 import { decrypt } from "@/lib/crypto";
 import { metaGET } from "@/lib/meta/client";
+import pool from "@/lib/db";
 
 import {
     getConnection,
@@ -27,6 +28,7 @@ export interface SyncResult {
         language: string;
         category: string;
         status: string;
+        body: string;
     }>;
 
     activity: Array<{
@@ -46,7 +48,13 @@ interface PhoneResponse {
         verified_name: string;
         quality_rating?: string;
         status?: string;
+        whatsapp_business_manager_messaging_limit?: string;
     }>;
+}
+
+interface WabaResponse {
+    id: string;
+    name: string;
 }
 
 interface TemplateResponse {
@@ -56,6 +64,10 @@ interface TemplateResponse {
         language: string;
         category: string;
         status: string;
+        components?: Array<{
+            type: string;
+            text?: string;
+        }>;
     }>;
 }
 
@@ -63,7 +75,9 @@ export async function syncWhatsApp(
     organizationId: string
 ): Promise<SyncResult> {
 
-    // Load saved connection
+    // ---------------------------------------------
+    // Load Connection
+    // ---------------------------------------------
 
     const account = await getConnection(organizationId);
 
@@ -71,17 +85,17 @@ export async function syncWhatsApp(
         throw new Error("WhatsApp account not connected.");
     }
 
-    // Decrypt access token
-
     const accessToken = decrypt(account.access_token);
 
-    // Fetch latest phone details
+    // ---------------------------------------------
+    // Phone Number
+    // ---------------------------------------------
 
     let phoneResponse: PhoneResponse;
 
     try {
         phoneResponse = await metaGET<PhoneResponse>(
-            `/${account.waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status`,
+            `/${account.waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,status,whatsapp_business_manager_messaging_limit`,
             accessToken
         );
     } catch {
@@ -96,46 +110,128 @@ export async function syncWhatsApp(
         throw new Error("No phone number found.");
     }
 
-    // Fetch latest templates
+    // ---------------------------------------------
+    // WABA
+    // ---------------------------------------------
+
+    let waba: WabaResponse;
+
+    try {
+
+        waba = await metaGET<WabaResponse>(
+            `/${account.waba_id}?fields=name`,
+            accessToken
+        );
+
+    } catch {
+
+        waba = {
+            id: account.waba_id,
+            name: account.meta_business_name,
+        };
+
+    }
+
+    // ---------------------------------------------
+    // Templates
+    // ---------------------------------------------
 
     let templateResponse: TemplateResponse;
 
     try {
+
         templateResponse = await metaGET<TemplateResponse>(
-            `/${account.waba_id}/message_templates?fields=id,name,status,category,language`,
+            `/${account.waba_id}/message_templates?fields=id,name,status,category,language,components`,
             accessToken
         );
+
     } catch {
+
         throw new Error(
             "Unable to fetch templates from Meta."
         );
+
     }
 
-    // Update latest information in database
+    // ---------------------------------------------
+    // Update Cached Data
+    // ---------------------------------------------
 
     await updateConnection(organizationId, {
-        quality_rating: phone.quality_rating ?? "UNKNOWN",
-        status: phone.status ?? "connected",
-        last_synced_at: new Date(),
+
+        meta_business_name:
+            waba.name,
+
+        display_name:
+            phone.verified_name,
+
+        phone_number:
+            phone.display_phone_number,
+
+        quality_rating:
+            phone.quality_rating ?? "UNKNOWN",
+
+        messaging_limit:
+            phone.whatsapp_business_manager_messaging_limit ??
+            account.messaging_limit,
+
+        status:
+            phone.status ?? "connected",
+        webhook_status:
+            "active",
+
+        last_synced_at:
+            new Date(),
+
     });
 
-    // Return latest data
+    // ---------------------------------------------
+    // Recent Activity
+    // ---------------------------------------------
+
+    const activityResult = await pool.query(
+        `
+        SELECT
+            id,
+            phone,
+            template_name,
+            whatsapp_message_id,
+            status,
+            sent_at
+        FROM messages
+        WHERE organization_id = $1
+        ORDER BY sent_at DESC
+        LIMIT 20
+        `,
+        [organizationId]
+    );
+
+    // ---------------------------------------------
+    // Return
+    // ---------------------------------------------
 
     return {
+
         connection: {
+
             connected: true,
 
-            businessName: account.meta_business_name,
+            businessName:
+                waba.name,
 
-            phoneNumber: phone.display_phone_number,
+            phoneNumber:
+                phone.display_phone_number,
 
-            verifiedName: phone.verified_name,
+            verifiedName:
+                phone.verified_name,
 
             qualityRating:
                 phone.quality_rating ?? "UNKNOWN",
 
             messagingLimit:
-                account.messaging_limit ?? "UNKNOWN",
+                phone.whatsapp_business_manager_messaging_limit ??
+                account.messaging_limit ??
+                "",
 
             webhookStatus:
                 account.webhook_status,
@@ -153,18 +249,50 @@ export async function syncWhatsApp(
 
             phoneNumberId:
                 phone.id,
+
         },
 
-        templates: (templateResponse.data ?? []).map(
-            (template) => ({
-                id: template.id,
-                name: template.name,
-                language: template.language,
-                category: template.category,
-                status: template.status,
-            })
-        ),
+        templates:
+            (templateResponse.data ?? []).map(
+                (template) => ({
 
-        activity: [],
+                    id: template.id,
+
+                    name: template.name,
+
+                    language: template.language,
+
+                    category: template.category,
+
+                    status: template.status,
+
+                    body:
+                        template.components?.find(
+                            c => c.type === "BODY"
+                        )?.text ?? "",
+
+                })
+            ),
+
+        activity:
+            activityResult.rows.map((row) => ({
+
+                id: row.id,
+
+                recipient: row.phone,
+
+                template: row.template_name,
+
+                status: row.status,
+
+                messageId: row.whatsapp_message_id,
+
+                time: row.sent_at
+                    ? row.sent_at.toISOString()
+                    : "",
+
+            })),
+
     };
+
 }

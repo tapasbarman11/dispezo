@@ -29,6 +29,41 @@ const COUNTRY_CODES = [
     '+91', '+1', '+44', '+971', '+65', '+61', '+49', '+33', '+81', '+55',
 ];
 
+function formatMessagingLimit(limit?: string) {
+
+    switch (limit) {
+
+        case "TIER_250":
+            return "250";
+
+        case "TIER_1K":
+            return "1,000";
+
+        case "TIER_2K":
+            return "2,000";
+
+        case "TIER_10K":
+            return "10,000";
+
+        case "TIER_25K":
+            return "25,000";
+
+        case "TIER_50K":
+            return "50,000";
+
+        case "TIER_100K":
+            return "100,000";
+
+        case "TIER_UNLIMITED":
+            return "Unlimited";
+
+        default:
+            return "-";
+
+    }
+
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: ActivityStatus }) {
@@ -82,40 +117,69 @@ export default function WhatsAppPage() {
         timestamp: '2026-06-23T11:32:00',
         latency: 612,
     });
-    
+
     const [connection, setConnection] = useState<any>(null);
     const [templates, setTemplates] = useState<any[]>([]);
     const [activity, setActivity] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadDashboard = useCallback(async () => {
+    const loadStatus = useCallback(async () => {
         const res = await fetch("/api/whatsapp/status");
+
         const json = await res.json();
 
         if (!json.success) {
             setConnection(null);
-            setTemplates([]);
-            setActivity([]);
             return;
         }
 
         setConnection(json.connection);
-        setTemplates(json.templates);
-        setActivity(json.activity);
 
-        if (json.templates.length > 0) {
-            setSelectedTemplate(json.templates[0].name);
+    }, []);
+
+    const syncMeta = useCallback(async () => {
+
+        try {
+
+            const res = await fetch("/api/whatsapp/sync", {
+                method: "POST",
+            });
+
+            const json = await res.json();
+
+            if (!json.success) return;
+
+            setConnection(json.connection);
+            setTemplates(json.templates);
+            setActivity(json.activity);
+
+            if (json.templates.length > 0) {
+                setSelectedTemplate(json.templates[0].name);
+            }
+
+        } catch (err) {
+
+            console.error(err);
+
         }
+
     }, []);
 
     const handleRefresh = useCallback(async () => {
+
         setRefreshing(true);
+
         try {
-            await loadDashboard();
+
+            await syncMeta();
+
         } finally {
+
             setRefreshing(false);
+
         }
-    }, [loadDashboard]);
+
+    }, [syncMeta]);
 
     const sendTestMessage = useCallback(async () => {
         if (!recipientNumber.trim() || sending) return;
@@ -137,7 +201,7 @@ export default function WhatsAppPage() {
             if (!json.success) {
                 throw new Error(json.message);
             }
-            await loadDashboard();
+            await syncMeta();
             alert("Message sent successfully.");
         } catch (err: any) {
             alert(err.message);
@@ -150,13 +214,17 @@ export default function WhatsAppPage() {
         selectedTemplate,
         selectedLanguage,
         sending,
-        loadDashboard,
+        syncMeta,
     ]);
 
 
     useEffect(() => {
-        loadDashboard();
-    }, [loadDashboard]);
+
+        loadStatus();
+
+        syncMeta();
+
+    }, [loadStatus, syncMeta]);
 
     const formatTs = (ts: string) => {
         const d = new Date(ts);
@@ -278,7 +346,7 @@ export default function WhatsAppPage() {
                             </div>
 
                             <div className="text-base font-semibold leading-6">
-                                {connection?.messagingLimit ?? "-"}
+                                {formatMessagingLimit(connection?.messagingLimit)}
                             </div>
                         </div>
 
@@ -389,14 +457,29 @@ export default function WhatsAppPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Message Preview
                             </label>
-                            <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-[#E7FFEE] px-5 py-6">
-                                <span className="text-[13.5px] text-gray-700">
-                                    {selectedTemplate
-                                        ? `Selected Template: ${selectedTemplate}`
-                                        : "Select a template"}
-                                </span>
-                                <div className="ml-3 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#25D366]">
-                                    <WhatsAppIcon className="h-4 w-4 text-white" />
+                            <div className="flex items-start justify-between rounded-2xl border border-emerald-200 bg-[#E7FFEE] px-5 py-5">
+                                <div className="flex-1 pr-4">
+                                    {selectedTemplate ? (
+                                        <>
+                                            <div className="text-xs font-semibold uppercase text-emerald-700 mb-2">
+                                                {selectedTemplate}
+                                            </div>
+                                            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                                                {
+                                                    templates.find(
+                                                        (t: any) => t.name === selectedTemplate
+                                                    )?.body || "No preview available."
+                                                }
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-sm text-gray-500">
+                                            Select a template
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="ml-3 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#25D366]">
+                                    <WhatsAppIcon className="h-5 w-5 text-white" />
                                 </div>
                             </div>
                         </div>

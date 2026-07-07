@@ -9,6 +9,7 @@ import pool from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
+
     const session = await getServerSession(authOptions);
 
     if (!session?.user) {
@@ -23,7 +24,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const organizationId = (session.user as any).organizationId;
+    const organizationId =
+      (session.user as { organizationId: string }).organizationId;
 
     const account = await getConnectionByOrganization(
       organizationId
@@ -41,20 +43,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json();
-
     const {
       phoneNumber,
       templateName,
       language = "en_US",
-    } = body;
+    } = await req.json();
 
     if (!phoneNumber || !templateName) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "Phone number and template are required.",
+          message: "Phone number and template are required.",
         },
         {
           status: 400,
@@ -68,6 +67,7 @@ export async function POST(req: NextRequest) {
 
     const payload = {
       messaging_product: "whatsapp",
+      recipient_type: "individual",
       to: phoneNumber,
       type: "template",
       template: {
@@ -78,57 +78,72 @@ export async function POST(req: NextRequest) {
       },
     };
 
+    console.log("===== SEND MESSAGE =====");
+    console.log(
+      JSON.stringify(payload, null, 2)
+    );
+
     const response = await metaPOST<any>(
       `/${account.phone_number_id}/messages`,
       accessToken,
       payload
     );
-    const messageId = response?.messages?.[0]?.id ?? null;
+
+    console.log("===== META RESPONSE =====");
+    console.log(
+      JSON.stringify(response, null, 2)
+    );
+
+    const messageId =
+      response?.messages?.[0]?.id ?? null;
 
     await pool.query(
       `
-  INSERT INTO messages
-  (
-    organization_id,
-    campaign_id,
-    phone,
-    template_name,
-    whatsapp_message_id,
-    status,
-    sent_at
-  )
-  VALUES
-  (
-    $1,$2,$3,$4,$5,$6,NOW()
-  )
-  `,
+      INSERT INTO messages
+      (
+        organization_id,
+        campaign_id,
+        phone,
+        template_name,
+        whatsapp_message_id,
+        status,
+        sent_at
+      )
+      VALUES
+      (
+        $1,$2,$3,$4,$5,$6,NOW()
+      )
+      `,
       [
         organizationId,
         null,
         phoneNumber,
         templateName,
         messageId,
-        response?.messages?.length ? "Sent" : "Failed",
+        messageId ? "Sent" : "Failed",
       ]
     );
+
     return NextResponse.json({
       success: true,
       messageId,
     });
 
   } catch (error: any) {
+
     console.error(error);
 
     return NextResponse.json(
       {
         success: false,
         message:
-          error.message ||
+          error?.message ??
           "Unable to send message.",
       },
       {
         status: 500,
       }
     );
+
   }
 }
