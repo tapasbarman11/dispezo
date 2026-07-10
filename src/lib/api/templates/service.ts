@@ -20,6 +20,7 @@ import {
     createMetaTemplate,
     deleteMetaTemplate,
 } from "@/lib/meta/templates";
+import { uploadMediaForTemplate } from "@/lib/meta/client";
 // -----------------------------------------------------
 // Load All Templates
 // -----------------------------------------------------
@@ -78,6 +79,50 @@ export async function updateTemplate(
         throw new Error(
             "Template not found."
         );
+
+    }
+
+    //-----------------------------------------------------
+    // If the template was REJECTED on Meta, delete it from
+    // Meta now so sync doesn't overwrite our local draft.
+    //-----------------------------------------------------
+
+    if (
+        existing.status === "REJECTED" &&
+        existing.metaTemplateId
+    ) {
+
+        try {
+
+            const account =
+                await getConnection(
+                    input.organizationId
+                );
+
+            if (account) {
+
+                const accessToken =
+                    decrypt(
+                        account.access_token
+                    );
+
+                await deleteMetaTemplate(
+                    account.waba_id,
+                    accessToken,
+                    existing.metaTemplateId,
+                    existing.name
+                );
+
+            }
+
+        } catch (err: any) {
+
+            console.warn(
+                "Failed to delete rejected template from Meta:",
+                err.message
+            );
+
+        }
 
     }
 
@@ -243,6 +288,86 @@ export async function submitTemplate(
         );
 
     //-------------------------------------------------
+    // If re-submitting a previously rejected template,
+    // delete the old one from Meta first. Meta won't
+    // allow a new template with the same name while
+    // the rejected one still exists.
+    //-------------------------------------------------
+
+    if (template.metaTemplateId) {
+
+        try {
+
+            await deleteMetaTemplate(
+                account.waba_id,
+                accessToken,
+                template.metaTemplateId,
+                template.name
+            );
+
+        } catch (err: any) {
+
+            // If deletion fails because it's already gone
+            // on Meta's side, that's fine — continue.
+            console.warn(
+                "Failed to delete old Meta template (may already be gone):",
+                err.message
+            );
+
+        }
+
+    }
+
+    //-------------------------------------------------
+    // Upload Image to Meta (if IMAGE header)
+    //-------------------------------------------------
+
+    let headerHandle: string | undefined;
+
+    if (
+        template.headerType?.toUpperCase() === "IMAGE" &&
+        template.sampleMediaPath
+    ) {
+
+        const path = await import("path");
+        const fs = await import("fs");
+
+        const filePath = path.join(
+            process.cwd(),
+            "public",
+            template.sampleMediaPath
+        );
+
+        if (fs.existsSync(filePath)) {
+
+            const stats = fs.statSync(filePath);
+            const mimeType =
+                template.sampleMediaType || "image/png";
+
+            // Get app ID from token
+            const { metaGET } = await import("@/lib/meta/client");
+            const debug = await metaGET<{
+                data: { app_id: string };
+            }>(
+                "/debug_token?input_token=" + accessToken,
+                accessToken
+            );
+
+            const appId = debug.data.app_id;
+
+            headerHandle = await uploadMediaForTemplate(
+                accessToken,
+                appId,
+                filePath,
+                mimeType,
+                stats.size
+            );
+
+        }
+
+    }
+
+    //-------------------------------------------------
     // Create Template In Meta
     //-------------------------------------------------
 
@@ -280,6 +405,11 @@ export async function submitTemplate(
 
             buttons:
                 template.buttons,
+
+            variableSamples:
+                template.variableSamples ?? undefined,
+
+            headerHandle,
 
         });
     if (!metaTemplate.id) {

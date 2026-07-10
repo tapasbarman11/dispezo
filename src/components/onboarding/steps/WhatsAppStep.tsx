@@ -232,7 +232,7 @@ export function WhatsAppStep({ data, onChange, error }: Props) {
           </div>
 
           {/* } <p className="mt-5 text-xs text-slate-500">
-            Meta Embedded Signup will be enabled once Dispaz becomes an approved Meta Tech Provider.
+            Meta Embedded Signup will be enabled once {BRAND.name} becomes an approved Meta Tech Provider.
           </p> */}
 
           <div className="flex items-center my-8">

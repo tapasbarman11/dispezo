@@ -39,9 +39,16 @@ function mapTemplate(row: any): Template {
 
                 : (row.buttons ?? []),
 
+        variableSamples:
+            typeof row.variable_samples === "string"
+                ? JSON.parse(row.variable_samples)
+                : (row.variable_samples ?? null),
+
         metaTemplateId: row.meta_template_id,
 
         status: row.meta_status,
+
+        rejectedReason: row.rejected_reason ?? null,
 
         isPublished: row.is_published,
 
@@ -136,11 +143,12 @@ export async function saveTemplate(
            body,
            footer,
            buttons,
+           variable_samples,
            meta_status
         )
         VALUES
         (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'DRAFT'
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'DRAFT'
         )
         RETURNING *
         `,
@@ -158,6 +166,7 @@ export async function saveTemplate(
             data.body,
             data.footer,
             JSON.stringify(data.buttons ?? []),
+            JSON.stringify(data.variableSamples ?? {}),
         ]
     );
 
@@ -196,6 +205,9 @@ export async function updateTemplate(
            body=$11,
            footer=$12,
            buttons=$13,
+           variable_samples=$14,
+           meta_status = CASE WHEN meta_status = 'REJECTED' THEN 'DRAFT' ELSE meta_status END,
+           meta_template_id = CASE WHEN meta_status = 'REJECTED' THEN NULL ELSE meta_template_id END,
            updated_at=NOW()
 
         WHERE id=$1
@@ -226,6 +238,8 @@ export async function updateTemplate(
             data.footer,
 
             JSON.stringify(data.buttons ?? []),
+
+            JSON.stringify(data.variableSamples ?? {}),
 
         ]
     );
@@ -284,6 +298,8 @@ export async function upsertMetaTemplate(
 
         metaStatus: string;
 
+        rejectedReason?: string | null;
+
     }
 
 ): Promise<Template> {
@@ -335,6 +351,8 @@ export async function upsertMetaTemplate(
 
                 meta_status = $11,
 
+                rejected_reason = $12,
+
                 is_published = TRUE,
 
                 published_at = NOW(),
@@ -371,6 +389,8 @@ export async function upsertMetaTemplate(
 
                 template.metaStatus,
 
+                template.rejectedReason ?? null,
+
             ]
         );
 
@@ -398,13 +418,14 @@ export async function upsertMetaTemplate(
             footer,
             buttons,
             meta_status,
+            rejected_reason,
             is_published,
             published_at
         )
 
         VALUES
         (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,NOW()
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,TRUE,NOW()
         )
 
         RETURNING *
@@ -436,6 +457,8 @@ export async function upsertMetaTemplate(
             ),
 
             template.metaStatus,
+
+            template.rejectedReason ?? null,
 
         ]
     );

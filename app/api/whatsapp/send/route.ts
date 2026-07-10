@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       phoneNumber,
       templateName,
       language = "en_US",
+      components,
     } = await req.json();
 
     if (!phoneNumber || !templateName) {
@@ -65,7 +66,46 @@ export async function POST(req: NextRequest) {
       account.access_token
     );
 
-    const payload = {
+    // Upload any image to Meta and replace link with media_id
+    if (components && components.length > 0) {
+      for (const comp of components) {
+        if (comp.type === "header" && comp.parameters?.[0]?.type === "image") {
+          const imgParam = comp.parameters[0];
+          if (imgParam.image?.link) {
+            // Read the local file and upload to Meta
+            const fs = await import("fs");
+            const path = await import("path");
+            const localPath = imgParam.image.link.replace(/^https?:\/\/[^/]+/, "");
+            const filePath = path.join(process.cwd(), "public", localPath);
+
+            if (fs.existsSync(filePath)) {
+              const fileBuffer = fs.readFileSync(filePath);
+              const formData = new FormData();
+              formData.append("messaging_product", "whatsapp");
+              formData.append("file", new Blob([fileBuffer], { type: "image/png" }), "header.png");
+
+              const uploadRes = await fetch(
+                `https://graph.facebook.com/v23.0/${account.phone_number_id}/media`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                  body: formData,
+                }
+              );
+              const uploadJson = await uploadRes.json();
+
+              if (uploadJson.id) {
+                // Replace link with media_id
+                delete imgParam.image.link;
+                imgParam.image.id = uploadJson.id;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const payload: any = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
       to: phoneNumber,
@@ -77,6 +117,11 @@ export async function POST(req: NextRequest) {
         },
       },
     };
+
+    // Add components (variables, image header, buttons) if provided
+    if (components && components.length > 0) {
+      payload.template.components = components;
+    }
 
     console.log("===== SEND MESSAGE =====");
     console.log(

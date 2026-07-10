@@ -106,9 +106,13 @@ export interface Template {
 
   buttons: any[];
 
+  variableSamples?: Record<string, string> | null;
+
   metaTemplateId?: string | null;
 
   status: string;
+
+  rejectedReason?: string | null;
 
   isPublished: boolean;
 
@@ -148,5 +152,7 @@ export interface SaveTemplateInput {
   footer?: string;
 
   buttons?: any;
+
+  variableSamples?: Record<string, string>;
 
 }

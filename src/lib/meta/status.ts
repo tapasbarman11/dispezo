@@ -132,7 +132,12 @@ export async function verifyWhatsAppConnection(
   }
 
   console.log("========== VERIFY SUCCESS ==========");
-
+console.log("META RETURN");
+console.log({
+  businessName: waba.name,
+  verifiedName: phone.verified_name,
+  messagingLimit: phone.whatsapp_business_manager_messaging_limit,
+});
   return {
     businessId: waba.id,
     businessName: waba.name,

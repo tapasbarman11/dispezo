@@ -138,10 +138,21 @@ export async function PUT(
 
         const body =
             await req.json();
-      
-        console.log("========== TEMPLATE SAVE ==========");
-        console.log(JSON.stringify(body, null, 2));
-        console.log("==================================");
+
+        if (!body.id || String(body.id).trim() === "") {
+
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: "Missing template id for update.",
+                },
+                {
+                    status: 400,
+                }
+            );
+
+        }
+
         const template =
             await updateTemplate(
 

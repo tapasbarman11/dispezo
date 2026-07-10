@@ -43,6 +43,11 @@ export interface CreateMetaTemplateInput {
 
     buttons?: MetaTemplateButton[];
 
+    variableSamples?: Record<string, string>;
+
+    // Media handle obtained from Meta's resumable upload
+    headerHandle?: string;
+
 }
 
 export interface MetaTemplateResult {
@@ -99,13 +104,18 @@ function buildComponents(
 
             case "IMAGE":
 
-                components.push({
-
+                const imageHeader: any = {
                     type: "HEADER",
-
                     format: "IMAGE",
+                };
 
-                });
+                if (input.headerHandle) {
+                    imageHeader.example = {
+                        header_handle: [input.headerHandle],
+                    };
+                }
+
+                components.push(imageHeader);
 
                 break;
 
@@ -141,13 +151,36 @@ function buildComponents(
     // BODY
     //-------------------------------------------------
 
-    components.push({
+    const bodyComponent: any = {
 
         type: "BODY",
 
         text: input.body,
 
-    });
+    };
+
+    // Add sample variable values if variables exist
+    const bodyVars = Array.from(
+        input.body.matchAll(/\{\{(\d+)\}\}/g)
+    ).map((m) => m[1]);
+
+    const uniqueVars = [...new Set(bodyVars)].sort(
+        (a, b) => Number(a) - Number(b)
+    );
+
+    if (uniqueVars.length > 0 && input.variableSamples) {
+
+        bodyComponent.example = {
+            body_text: [
+                uniqueVars.map(
+                    (v) => input.variableSamples?.[v] || `sample_${v}`
+                ),
+            ],
+        };
+
+    }
+
+    components.push(bodyComponent);
 
     //-------------------------------------------------
     // FOOTER

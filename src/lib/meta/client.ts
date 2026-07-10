@@ -155,6 +155,70 @@ export async function metaPOST<T>(
 // DELETE
 //-----------------------------------------------------
 
+//-----------------------------------------------------
+// Upload Media for Template Header
+// Two-step Meta resumable upload:
+// 1. Create upload session → get session ID
+// 2. Upload bytes to session → get handle
+//-----------------------------------------------------
+
+export async function uploadMediaForTemplate(
+  accessToken: string,
+  appId: string,
+  filePath: string,
+  mimeType: string,
+  fileLength: number
+): Promise<string> {
+
+  const fs = await import("fs");
+
+  // Step 1: Create upload session
+  const sessionRes = await fetch(
+    `${BASE_URL}/${appId}/uploads?file_length=${fileLength}&file_type=${encodeURIComponent(mimeType)}&access_token=${accessToken}`,
+    { method: "POST" }
+  );
+  const sessionJson = await sessionRes.json();
+
+  if (!sessionJson.id) {
+    throw new MetaApiError(
+      sessionJson?.error?.message ?? "Failed to create upload session",
+      sessionRes.status
+    );
+  }
+
+  // Step 2: Upload file bytes
+  const fileBuffer = fs.readFileSync(filePath);
+
+  const uploadRes = await fetch(
+    `${BASE_URL}/${sessionJson.id}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `OAuth ${accessToken}`,
+        "Content-Type": mimeType,
+        file_offset: "0",
+      },
+      body: fileBuffer,
+    }
+  );
+
+  const uploadJson = await uploadRes.json();
+
+  if (!uploadJson.h) {
+    throw new MetaApiError(
+      uploadJson?.error?.message ?? "Failed to upload media",
+      uploadRes.status
+    );
+  }
+
+  return uploadJson.h;
+
+}
+
+//-----------------------------------------------------
+// DELETE
+//-----------------------------------------------------
+
 export async function metaDELETE<T>(
   endpoint: string,
   accessToken: string,

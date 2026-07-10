@@ -11,6 +11,8 @@ import {
     Trash2,
     Send,
     Copy,
+    Image as ImageIcon,
+    Type,
 } from "lucide-react";
 import {
     Tooltip,
@@ -39,6 +41,7 @@ export interface TemplateCardModel {
     footer?: string;
 
     buttons?: TemplateButton[];
+    rejectedReason?: string | null;
 }
 
 interface Props {
@@ -151,39 +154,50 @@ export default function TemplateCard({
 
                         </span>
 
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+
+                            {(() => {
+                                const ht = (template.headerType ?? "NONE").toUpperCase();
+                                if (ht === "IMAGE") return (
+                                    <><ImageIcon className="h-3 w-3" /> Image</>
+                                );
+                                if (ht === "TEXT" || ht === "HEADER") return (
+                                    <><Type className="h-3 w-3" /> Text</>
+                                );
+                                return "None";
+                            })()}
+
+                        </span>
+
                     </div>
+
+                    {status === "REJECTED" && template.rejectedReason && (
+                        <p className="mt-2 line-clamp-2 text-xs text-red-500">
+                            Reason: {template.rejectedReason}
+                        </p>
+                    )}
 
                 </div>
 
             </div>
 
-            {/* WhatsApp Preview */}
+            {/* Message Preview */}
 
             <div className="bg-[#F7F8FA] px-6 py-5">
 
                 <div className="mb-3 flex items-center gap-2">
 
-                    <MessageSquare className="h-4 w-4 text-[#25D366]" />
+                    <MessageSquare className="h-4 w-4 text-gray-400" />
 
                     <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
 
-                        WhatsApp Preview
+                        Message Preview
 
                     </span>
 
                 </div>
 
-                <div className="flex h-[210px] flex-col rounded-2xl bg-[#DCF8C6] p-4 shadow-sm overflow-hidden">
-
-                    {template.headerImage && (
-
-                        <img
-                            src={template.headerImage}
-                            alt=""
-                            className="mb-3 h-36 w-full rounded-xl object-cover"
-                        />
-
-                    )}
+                <div className="flex h-[210px] flex-col rounded-2xl border border-gray-200 bg-white p-4 overflow-hidden">
 
                     {template.headerText && (
 
@@ -195,7 +209,7 @@ export default function TemplateCard({
 
                     )}
 
-                    <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-gray-800">
+                    <p className="line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-gray-700">
 
                         {template.body ||
                             "No template content available."}
@@ -204,7 +218,7 @@ export default function TemplateCard({
 
                     {template.footer && (
 
-                        <div className="mt-auto border-t border-gray-300 pt-3 text-xs text-gray-500">
+                        <div className="mt-auto border-t border-gray-200 pt-3 text-xs text-gray-400">
 
                             {template.footer}
 
@@ -212,30 +226,12 @@ export default function TemplateCard({
 
                     )}
 
-                    {template.buttons &&
-                        template.buttons.length > 0 && (
-
-                            <div className="mt-4 space-y-2">
-
-                                {template.buttons
-                                    .slice(0, 2)
-                                    .map((button, index) => (
-
-                                        <button
-                                            key={index}
-                                            className="w-full rounded-lg border border-[#C8E6C9] bg-white py-2 text-sm font-medium text-[#00A884]"
-                                        >
-                                            {button.text}
-                                        </button>
-                                    ))}
-                            </div>
-                        )}
                 </div>
             </div>
 
             <div className="flex items-center justify-between border-t bg-gray-50 px-6 py-4">
 
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
 
                     {/* Preview */}
 
@@ -260,38 +256,34 @@ export default function TemplateCard({
 
                     </Tooltip>
 
-                    {/* Draft */}
+                    {/* Draft or Rejected — Edit */}
 
-                    {status === "DRAFT" && (
+                    {(status === "DRAFT" || status === "REJECTED") && (
 
-                        <>
+                        <Tooltip>
 
-                            <Tooltip>
+                            <TooltipTrigger asChild>
 
-                                <TooltipTrigger asChild>
+                                <button
+                                    onClick={onEdit}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#635BFF] text-white transition hover:bg-[#5148ff]"
+                                >
+                                    <Pencil className="h-4 w-4" />
+                                </button>
 
-                                    <button
-                                        onClick={onEdit}
-                                        className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#635BFF] text-white transition hover:bg-[#5148ff]"
-                                    >
-                                        <Pencil className="h-4 w-4" />
-                                    </button>
+                            </TooltipTrigger>
 
-                                </TooltipTrigger>
+                            <TooltipContent>
 
-                                <TooltipContent>
+                                Edit
 
-                                    Edit
+                            </TooltipContent>
 
-                                </TooltipContent>
-
-                            </Tooltip>
-
-                        </>
+                        </Tooltip>
 
                     )}
 
-                    {/* Approved */}
+                    {/* Approved — Duplicate */}
 
                     {status === "APPROVED" && (
 
@@ -318,29 +310,35 @@ export default function TemplateCard({
 
                     )}
 
-                    {/* Delete - Always Visible */}
-
-                    <Tooltip>
-
-                        <TooltipTrigger asChild>
-
-                            <button
-                                onClick={onDelete}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </button>
-
-                        </TooltipTrigger>
-
-                        <TooltipContent>
-
-                            Delete
-
-                        </TooltipContent>
-
-                    </Tooltip>
                 </div>
+
+                {/* Delete - right side with confirmation */}
+
+                <Tooltip>
+
+                    <TooltipTrigger asChild>
+
+                        <button
+                            onClick={() => {
+                                if (window.confirm(`Delete "${template.name}"? This cannot be undone.`)) {
+                                    onDelete();
+                                }
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100"
+                        >
+                            <Trash2 className="h-4 w-4" />
+                        </button>
+
+                    </TooltipTrigger>
+
+                    <TooltipContent>
+
+                        Delete
+
+                    </TooltipContent>
+
+                </Tooltip>
+
             </div>
 
             {/* More Menu */}

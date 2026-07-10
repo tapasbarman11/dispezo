@@ -12,12 +12,17 @@ import {
     Paperclip,
     Camera,
     Mic,
+    ExternalLink,
 } from "lucide-react";
 interface Button {
 
     type: string;
 
     text: string;
+
+    url?: string;
+
+    phoneNumber?: string;
 
 }
 
@@ -181,25 +186,37 @@ export default function WhatsAppPreview({
                     {template.buttons &&
                         template.buttons.length > 0 && (
 
-                            <div className="mt-4 space-y-2">
+                            <div className="mt-3 space-y-px overflow-hidden rounded-xl border border-gray-200 bg-white">
 
                                 {template.buttons.map(
+                                    (button, index) => {
 
-                                    (
-                                        button,
-                                        index
-                                    ) => (
+                                        const type =
+                                            (button.type || "").toUpperCase();
 
-                                        <button
-                                            key={index}
-                                            className="w-full rounded-xl border border-[#B7DFC4] bg-white py-2 text-sm font-medium text-[#00A884]"
-                                        >
+                                        const icon =
+                                            type === "URL" ? (
+                                                <ExternalLink className="h-4 w-4" />
+                                            ) : type === "PHONE_NUMBER" ? (
+                                                <Phone className="h-4 w-4" />
+                                            ) : null;
 
-                                            {button.text}
+                                        return (
 
-                                        </button>
+                                            <div
+                                                key={index}
+                                                className="flex items-center justify-center gap-2 border-t border-gray-100 py-2.5 text-sm font-medium text-[#00A884] first:border-t-0"
+                                            >
 
-                                    )
+                                                {icon}
+
+                                                {button.text ||
+                                                    "Button"}
+
+                                            </div>
+
+                                        );
+                                    }
                                 )}
 
                             </div>

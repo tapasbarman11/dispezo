@@ -66,7 +66,14 @@ interface TemplateResponse {
         status: string;
         components?: Array<{
             type: string;
+            format?: string;
             text?: string;
+            buttons?: Array<{
+                type: string;
+                text?: string;
+                url?: string;
+                phone_number?: string;
+            }>;
         }>;
     }>;
 }
@@ -254,24 +261,53 @@ export async function syncWhatsApp(
 
         templates:
             (templateResponse.data ?? []).map(
-                (template) => ({
+                (template) => {
 
-                    id: template.id,
+                    const header = template.components?.find(
+                        (c: any) => c.type === "HEADER"
+                    );
+                    const buttonsComp = template.components?.find(
+                        (c: any) => c.type === "BUTTONS"
+                    );
 
-                    name: template.name,
+                    return {
 
-                    language: template.language,
+                        id: template.id,
 
-                    category: template.category,
+                        name: template.name,
 
-                    status: template.status,
+                        language: template.language,
 
-                    body:
-                        template.components?.find(
-                            c => c.type === "BODY"
-                        )?.text ?? "",
+                        category: template.category,
 
-                })
+                        status: template.status,
+
+                        headerType:
+                            header?.format ?? (header?.text ? "TEXT" : "NONE"),
+
+                        headerText:
+                            header?.text ?? null,
+
+                        body:
+                            template.components?.find(
+                                (c: any) => c.type === "BODY"
+                            )?.text ?? "",
+
+                        footer:
+                            template.components?.find(
+                                (c: any) => c.type === "FOOTER"
+                            )?.text ?? null,
+
+                        buttons:
+                            buttonsComp?.buttons?.map((btn: any) => ({
+                                type: btn.type,
+                                text: btn.text ?? "",
+                                url: btn.url ?? undefined,
+                                phoneNumber: btn.phone_number ?? undefined,
+                            })) ?? [],
+
+                    };
+                }
             ),
 
         activity:

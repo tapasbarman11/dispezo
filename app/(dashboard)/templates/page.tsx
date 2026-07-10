@@ -398,11 +398,20 @@ export default function TemplatesPage() {
 
             ...template,
 
-            id: "",
+            // No real id yet — the editor treats this as a CREATE.
+            // Must be undefined, never "" (empty string breaks the
+            // uuid lookup on the server).
+            id: undefined as unknown as string,
 
             status: "DRAFT",
 
             name: `${template.name}_copy_1`,
+
+            // A duplicate starts without sample media.
+            sampleMediaPath: undefined,
+            sampleMediaName: undefined,
+            sampleMediaType: undefined,
+            headerImage: null,
 
         });
 

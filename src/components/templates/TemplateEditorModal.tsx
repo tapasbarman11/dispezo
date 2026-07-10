@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     X,
     Upload,
     ImageIcon,
     Type,
     FileText,
+    Trash2,
 } from "lucide-react";
 import WhatsAppPreview from "./WhatsAppPreview";
+import { BRAND } from "@/config/branding";
 interface TemplateButton {
     type: string;
     text: string;
+    url?: string;
+    phoneNumber?: string;
 }
 
 export interface TemplateModel {
@@ -40,6 +44,8 @@ export interface TemplateModel {
 
     buttons?: TemplateButton[];
 
+    variableSamples?: Record<string, string> | null;
+
 }
 
 interface Props {
@@ -57,11 +63,6 @@ interface Props {
 const languages = [
 
     "en_US",
-    "en_GB",
-    "hi",
-    "bn",
-    "ta",
-    "te",
 
 ];
 
@@ -122,10 +123,27 @@ export default function TemplateEditorModal({
     const [sampleMediaName, setSampleMediaName] = useState("");
     const [sampleMediaType, setSampleMediaType] = useState("");
 
+    // The image path already persisted in the DB when the editor opened.
+    // This file is NEVER deleted on Cancel. It is only deleted on Save,
+    // and only if the user replaced or removed it.
+    const [initialMediaPath, setInitialMediaPath] = useState("");
+
+    // Every file uploaded during THIS editing session. Used to clean up
+    // throwaway uploads on Cancel, and orphaned uploads on Save.
+    const sessionUploadsRef = useRef<string[]>([]);
+
+    // Ref to the body textarea so variables insert at the cursor.
+    const bodyRef = useRef<HTMLTextAreaElement>(null);
+
     const [uploadingImage, setUploadingImage] = useState(false);
 
     const [body, setBody] =
         useState("");
+
+    // Sample values for body variables {{1}}, {{2}} etc.
+    // Key is the variable number string, value is the sample text.
+    const [variableSamples, setVariableSamples] =
+        useState<Record<string, string>>({});
 
     const [footer, setFooter] =
         useState("");
@@ -144,11 +162,11 @@ export default function TemplateEditorModal({
 
     useEffect(() => {
 
+        // A fresh editor session starts with no tracked uploads.
+        sessionUploadsRef.current = [];
+
         if (!template) {
-            console.log("EDITOR OPEN");
-            console.log(template);
-            console.log(template?.headerImage);
-            console.log(template?.sampleMediaPath);
+
             setName("");
 
             setCategory("MARKETING");
@@ -161,11 +179,21 @@ export default function TemplateEditorModal({
 
             setHeaderImage("");
 
+            // No media on a brand-new template.
+            setSampleMediaPath("");
+            setSampleMediaName("");
+            setSampleMediaType("");
+            setInitialMediaPath("");
+
             setBody("");
+
+            setVariableSamples({});
 
             setFooter("");
 
             setButtons([]);
+
+            setIsDirty(false);
 
             return;
 
@@ -191,12 +219,19 @@ export default function TemplateEditorModal({
         setSampleMediaName(template.sampleMediaName ?? "");
         setSampleMediaType(template.sampleMediaType ?? "");
 
+        // Remember the persisted image so Cancel never deletes it.
+        setInitialMediaPath(template.sampleMediaPath ?? "");
+
         setHeaderImage(
             template.sampleMediaPath ?? ""
         );
 
         setBody(
             template.body
+        );
+
+        setVariableSamples(
+            template.variableSamples ?? {}
         );
 
         setFooter(
@@ -215,22 +250,88 @@ export default function TemplateEditorModal({
 
     }, [template]);
 
+    //-----------------------------------------------------
+    // Insert next {{n}} variable at the cursor in the body
+    //-----------------------------------------------------
+
+    function insertVariable() {
+
+        const existing = Array.from(
+            body.matchAll(/\{\{(\d+)\}\}/g)
+        ).map((m) => Number(m[1]));
+
+        const next =
+            (existing.length ? Math.max(...existing) : 0) + 1;
+
+        const token = `{{${next}}}`;
+
+        const el = bodyRef.current;
+
+        if (el && typeof el.selectionStart === "number") {
+
+            const start = el.selectionStart;
+            const end = el.selectionEnd;
+
+            const newBody =
+                body.slice(0, start) + token + body.slice(end);
+
+            setBody(newBody);
+            setIsDirty(true);
+
+            requestAnimationFrame(() => {
+                el.focus();
+                const pos = start + token.length;
+                el.setSelectionRange(pos, pos);
+            });
+
+        } else {
+
+            setBody(body + token);
+            setIsDirty(true);
+
+        }
+
+    }
+
+    //-----------------------------------------------------
+    // Delete a media file from disk (best-effort)
+    //-----------------------------------------------------
+
+    async function deleteMediaFile(imagePath: string) {
+
+        if (!imagePath) return;
+
+        try {
+
+            await fetch("/api/template-media/delete", {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    imagePath
+                })
+            });
+
+        } catch (err) {
+
+            console.error("Failed to delete media file:", err);
+
+        }
+
+    }
+
+    //-----------------------------------------------------
+    // Upload Image
+    //-----------------------------------------------------
+    // We do NOT delete any previous file here. Cleanup is
+    // centralized: Save keeps the current file and removes
+    // the rest; Cancel removes everything uploaded this session.
+    //-----------------------------------------------------
+
     async function uploadImage(file: File) {
 
         try {
-            if (sampleMediaPath) {
-
-                await fetch("/api/template-media/delete", {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        imagePath: sampleMediaPath
-                    })
-                });
-
-            }
 
             setUploadingImage(true);
 
@@ -250,18 +351,16 @@ export default function TemplateEditorModal({
                 throw new Error(json.message);
             }
 
+            // Track this upload for later cleanup.
+            sessionUploadsRef.current.push(json.path);
+
             setSampleMediaPath(json.path);
             setSampleMediaName(json.name);
             setSampleMediaType(json.type);
 
             // Preview
             setHeaderImage(json.path);
-            console.log("AFTER UPLOAD");
-            console.log({
-                path: json.path,
-                sampleMediaPath,
-                headerImage
-            });
+
             setIsDirty(true);
 
         } catch (err: any) {
@@ -275,61 +374,180 @@ export default function TemplateEditorModal({
         }
 
     }
-    async function removeImage() {
+
+    //-----------------------------------------------------
+    // Remove Image (UI only)
+    //-----------------------------------------------------
+    // Clears the image from the form. The physical file and
+    // DB are NOT touched here — they are reconciled on Save,
+    // or cleaned up on Cancel.
+    //-----------------------------------------------------
+
+    function removeImage() {
 
         if (!sampleMediaPath) return;
 
-        try {
+        setSampleMediaPath("");
+        setSampleMediaName("");
+        setSampleMediaType("");
 
-            await fetch("/api/template-media/delete", {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    imagePath: sampleMediaPath
-                })
-            });
+        setHeaderImage("");
 
-            setSampleMediaPath("");
-            setSampleMediaName("");
-            setSampleMediaType("");
-
-            setHeaderImage("");
-
-            setIsDirty(true);
-
-        } catch (err) {
-
-            console.error(err);
-
-        }
+        setIsDirty(true);
 
     }
     //-----------------------------------------------------
+    // Validate Before Save
+    //-----------------------------------------------------
+
+    function validateBeforeSave(): string | null {
+
+        if (!name.trim()) {
+            return "Template name is required.";
+        }
+
+        // Meta requires lowercase, no spaces, underscores only
+        if (!/^[a-z0-9_]+$/.test(name.trim())) {
+            return "Template name must be lowercase letters, numbers, and underscores only (no spaces or special characters).";
+        }
+
+        if (!body.trim()) {
+            return "Message body is required.";
+        }
+
+        if (body.length > 1024) {
+            return `Message body exceeds 1024 characters (currently ${body.length}).`;
+        }
+
+        // An image-header template must have a sample image.
+        if (headerType === "IMAGE" && !sampleMediaPath) {
+            return "An image header requires a sample image. Please upload one or change the header type.";
+        }
+
+        // Footer max 60 chars
+        if (footer && footer.length > 60) {
+            return `Footer exceeds 60 characters (currently ${footer.length}).`;
+        }
+
+        // Validate variables are sequential: {{1}}, {{2}}, {{3}}…
+        const varMatches = Array.from(
+            body.matchAll(/\{\{(\d+)\}\}/g)
+        ).map((m) => Number(m[1]));
+
+        if (varMatches.length > 0) {
+            const sorted = [...new Set(varMatches)].sort((a, b) => a - b);
+            for (let i = 0; i < sorted.length; i++) {
+                if (sorted[i] !== i + 1) {
+                    return `Variables must be sequential starting from {{1}}. Found {{${sorted[i]}}} but expected {{${i + 1}}}.`;
+                }
+            }
+
+            // Every variable must have a sample value
+            for (const v of sorted) {
+                if (!variableSamples[String(v)]?.trim()) {
+                    return `Please provide a sample value for variable {{${v}}}. Meta requires sample data for every variable.`;
+                }
+            }
+        }
+
+        // Button validations
+        if (buttons.length > 0) {
+            const ctaCount = buttons.filter(
+                (b) => ["URL", "PHONE_NUMBER"].includes((b.type || "").toUpperCase())
+            ).length;
+            const qrCount = buttons.filter(
+                (b) => (b.type || "").toUpperCase() === "QUICK_REPLY"
+            ).length;
+
+            if (ctaCount > 2) {
+                return "Maximum 2 call-to-action buttons allowed (Visit website + Call phone).";
+            }
+            if (qrCount > 3) {
+                return "Maximum 3 quick reply buttons allowed.";
+            }
+
+            for (let i = 0; i < buttons.length; i++) {
+                const b = buttons[i];
+                const t = (b.type || "").toUpperCase();
+
+                if (!b.text?.trim()) {
+                    return `Button ${i + 1}: text is required.`;
+                }
+                if (b.text.length > 25) {
+                    return `Button ${i + 1}: text exceeds 25 characters.`;
+                }
+                if (t === "URL" && !b.url?.trim()) {
+                    return `Button ${i + 1} (Visit website): URL is required.`;
+                }
+                if (t === "URL" && b.url && !/^https?:\/\/.+/.test(b.url.trim())) {
+                    return `Button ${i + 1}: URL must start with https:// or http://`;
+                }
+                if (t === "PHONE_NUMBER" && !b.phoneNumber?.trim()) {
+                    return `Button ${i + 1} (Call phone): phone number is required. Enter with country code, e.g. 918939989397`;
+                }
+                if (t === "PHONE_NUMBER" && b.phoneNumber) {
+                    const cleaned = b.phoneNumber.replace(/[\s\-()]/g, "");
+                    if (cleaned.startsWith("+")) {
+                        return `Button ${i + 1}: do not include "+" in the phone number. Enter country code directly, e.g. 918939989397`;
+                    }
+                    if (!/^\d{7,15}$/.test(cleaned)) {
+                        return `Button ${i + 1}: phone number must be 7-15 digits with country code, e.g. 918939989397`;
+                    }
+                }
+            }
+        }
+
+        return null;
+
+    }
+
+    //-----------------------------------------------------
     // Save Template
     //-----------------------------------------------------
+    // Returns the saved template on success, or null if the
+    // save was blocked (validation) or failed. Callers must
+    // check the return value before closing the editor.
+    //-----------------------------------------------------
+
     async function saveTemplate(refresh = true): Promise<any> {
+
+        //-------------------------------------------------
+        // Validation (blocks save, keeps editor open)
+        //-------------------------------------------------
+
+        const validationError = validateBeforeSave();
+
+        if (validationError) {
+            alert(validationError);
+            return null;
+        }
+
+        //-------------------------------------------------
+        // A duplicated / new template has no real id, so we
+        // CREATE. An existing template has a real id, so we
+        // UPDATE. An empty string is never a valid id.
+        //-------------------------------------------------
+
+        const existingId =
+            template?.id && template.id.trim() !== ""
+                ? template.id
+                : undefined;
 
         try {
 
             setSaving(true);
-            console.log("CURRENT STATE", {
-                sampleMediaPath,
-                sampleMediaName,
-                sampleMediaType
-            });
+
             const res = await fetch(
                 "/api/templates",
                 {
-                    method: template ? "PUT" : "POST",
+                    method: existingId ? "PUT" : "POST",
                     headers: {
                         "Content-Type": "application/json",
                     },
 
                     body: JSON.stringify({
 
-                        id: template?.id,
+                        id: existingId,
 
                         name,
 
@@ -348,9 +566,14 @@ export default function TemplateEditorModal({
                         footer,
 
                         buttons,
-                        sampleMediaPath,
-                        sampleMediaName,
-                        sampleMediaType,
+
+                        // Send null (not "") when there is no image so the
+                        // DB is cleared cleanly on removal.
+                        sampleMediaPath: sampleMediaPath || null,
+                        sampleMediaName: sampleMediaName || null,
+                        sampleMediaType: sampleMediaType || null,
+
+                        variableSamples,
 
                     }),
                 }
@@ -368,9 +591,34 @@ export default function TemplateEditorModal({
 
             const savedTemplate = json.template;
 
+            //---------------------------------------------
+            // Reconcile files now that the change is saved.
+            // Keep the currently-saved file; delete every
+            // other file uploaded this session, plus the old
+            // persisted file if it was replaced or removed.
+            //---------------------------------------------
+
+            const keep = sampleMediaPath;
+
+            for (const path of sessionUploadsRef.current) {
+                if (path && path !== keep) {
+                    await deleteMediaFile(path);
+                }
+            }
+
+            if (initialMediaPath && initialMediaPath !== keep) {
+                await deleteMediaFile(initialMediaPath);
+            }
+
+            sessionUploadsRef.current = [];
+            setInitialMediaPath(keep);
+
             if (refresh) {
                 onSaved();
             }
+
+            setIsDirty(false);
+
             return savedTemplate;
 
         } catch (err: any) {
@@ -379,6 +627,8 @@ export default function TemplateEditorModal({
                 err.message
             );
 
+            return null;
+
         } finally {
 
             setSaving(false);
@@ -386,6 +636,15 @@ export default function TemplateEditorModal({
         }
 
     }
+
+    //-----------------------------------------------------
+    // Close / Cancel
+    //-----------------------------------------------------
+    // Nothing is saved, so delete every file uploaded during
+    // this session. The persisted file (initialMediaPath) is
+    // left untouched so a saved template keeps its image.
+    //-----------------------------------------------------
+
     async function handleClose() {
 
         if (isDirty) {
@@ -397,19 +656,14 @@ export default function TemplateEditorModal({
             if (!confirmed) return;
 
         }
-        if (sampleMediaPath) {
 
-            await fetch("/api/template-media/delete", {
-                method: "DELETE",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    imagePath: sampleMediaPath
-                })
-            });
-
+        for (const path of sessionUploadsRef.current) {
+            if (path && path !== initialMediaPath) {
+                await deleteMediaFile(path);
+            }
         }
+
+        sessionUploadsRef.current = [];
 
         onClose();
 
@@ -424,51 +678,38 @@ export default function TemplateEditorModal({
 
                 {/* LEFT PANEL */}
 
-                <div className="w-[48%] overflow-y-auto border-r">
+                <div className="w-[58%] overflow-y-auto border-r">
 
                     {/* Header */}
 
-                    <div className="sticky top-0 flex items-center justify-between border-b bg-white px-8 py-6">
+                    <div className="sticky top-0 z-10 border-b bg-white px-6 py-4">
 
-                        <div>
+                        <h2 className="text-lg font-bold">
 
-                            <h2 className="text-2xl font-bold">
+                            {template
+                                ? "Edit Template"
+                                : "Create Template"}
 
-                                {template
-                                    ? "Edit Template"
-                                    : "Create Template"}
+                        </h2>
 
-                            </h2>
+                        <p className="mt-0.5 text-xs text-gray-500">
 
-                            <p className="mt-1 text-sm text-gray-500">
+                            Configure your WhatsApp message template.
 
-                                Configure your WhatsApp message template.
-
-                            </p>
-
-                        </div>
-
-                        <button
-                            onClick={handleClose}
-                            className="rounded-xl p-2 hover:bg-gray-100"
-                        >
-
-                            <X className="h-5 w-5" />
-
-                        </button>
+                        </p>
 
                     </div>
 
                     {/* Form */}
 
-                    <div className="space-y-6 p-8">
+                    <div className="space-y-3.5 px-6 py-5">
                         {/* Template Name */}
 
                         <div>
 
-                            <label className="mb-2 block text-sm font-medium">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
 
-                                Template Name
+                                Template name
 
                             </label>
 
@@ -479,18 +720,18 @@ export default function TemplateEditorModal({
                                     setIsDirty(true);
                                 }}
                                 placeholder="appointment_confirmation"
-                                className="w-full rounded-xl border px-4 py-3 outline-none transition focus:border-[#635BFF]"
+                                className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition focus:border-[#635BFF]"
                             />
 
                         </div>
 
                         {/* Category & Language */}
 
-                        <div className="grid grid-cols-2 gap-5">
+                        <div className="grid grid-cols-2 gap-4">
 
                             <div>
 
-                                <label className="mb-2 block text-sm font-medium">
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
 
                                     Category
 
@@ -502,7 +743,7 @@ export default function TemplateEditorModal({
                                         setCategory(e.target.value);
                                         setIsDirty(true);
                                     }}
-                                    className="w-full rounded-xl border px-4 py-3"
+                                    className="w-full rounded-lg border px-3 py-2 text-sm"
                                 >
 
                                     {categories.map((item) => (
@@ -524,7 +765,7 @@ export default function TemplateEditorModal({
 
                             <div>
 
-                                <label className="mb-2 block text-sm font-medium">
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
 
                                     Language
 
@@ -537,7 +778,7 @@ export default function TemplateEditorModal({
                                         setLanguage(e.target.value);
                                         setIsDirty(true);
                                     }}
-                                    className="w-full rounded-xl border px-4 py-3"
+                                    className="w-full rounded-lg border px-3 py-2 text-sm"
                                 >
 
                                     {languages.map((item) => (
@@ -563,27 +804,44 @@ export default function TemplateEditorModal({
 
                         <div>
 
-                            <label className="mb-3 block text-sm font-medium">
+                            <label className="mb-1.5 block text-xs font-medium text-gray-600">
 
-                                Header Type
+                                Header type
 
                             </label>
 
-                            <div className="flex gap-3">
+                            <div className="inline-flex gap-1 rounded-lg border bg-gray-50 p-1">
 
                                 {headerTypes.map((item) => (
 
                                     <button
                                         key={item}
                                         type="button"
-                                        onClick={() => { setHeaderType(item); setIsDirty(true); }}
-                                        className={`rounded-xl border px-5 py-2 text-sm transition ${headerType === item
-                                            ? "border-[#635BFF] bg-[#F4F3FF] text-[#635BFF]"
-                                            : "bg-white"
+                                        onClick={() => {
+                                            // Switching away from IMAGE: clear the
+                                            // form's media fields. The actual file
+                                            // deletion happens on Save (reconciliation)
+                                            // or Cancel (session cleanup), so the user
+                                            // can undo by switching back before saving.
+                                            if (
+                                                headerType === "IMAGE" &&
+                                                item !== "IMAGE"
+                                            ) {
+                                                setSampleMediaPath("");
+                                                setSampleMediaName("");
+                                                setSampleMediaType("");
+                                                setHeaderImage("");
+                                            }
+                                            setHeaderType(item);
+                                            setIsDirty(true);
+                                        }}
+                                        className={`rounded-md px-4 py-1.5 text-xs font-medium transition ${headerType === item
+                                            ? "bg-[#635BFF] text-white"
+                                            : "text-gray-500 hover:text-gray-700"
                                             }`}
                                     >
 
-                                        {item}
+                                        {item.charAt(0) + item.slice(1).toLowerCase()}
 
                                     </button>
 
@@ -599,79 +857,97 @@ export default function TemplateEditorModal({
 
                             <div>
 
-                                <label className="mb-2 block text-sm font-medium">
+                                <label className="mb-1 block text-xs font-medium text-gray-600">
 
-                                    Sample Image (Required by Meta)
+                                    Sample image <span className="font-normal text-gray-400">· required by Meta</span>
 
                                 </label>
 
-                                <div className="rounded-2xl border-2 border-dashed border-gray-300 p-8">
+                                <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-4">
 
                                     {headerImage ? (
 
-                                        <div>
+                                        <div className="flex items-center gap-3">
 
                                             <img
                                                 src={headerImage}
-                                                className="mb-4 max-h-80 w-full rounded-xl border bg-gray-50 object-contain"
+                                                className="h-12 w-12 rounded-lg border bg-white object-cover"
                                             />
-                                            <div className="flex gap-5 text-sm">
 
-                                                <label
-                                                    htmlFor="template-image-upload"
-                                                    className="cursor-pointer font-medium text-[#635BFF] hover:underline"
-                                                >
-                                                    Replace
-                                                </label>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={removeImage}
-                                                    className="font-medium text-red-500 hover:underline"
-                                                >
-                                                    Remove
-                                                </button>
-
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm text-gray-800">
+                                                    {sampleMediaName || "Sample image"}
+                                                </div>
+                                                <div className="text-xs text-gray-400">
+                                                    Uploaded
+                                                </div>
                                             </div>
+
+                                            <label
+                                                htmlFor="template-image-upload"
+                                                className="cursor-pointer text-sm font-medium text-[#635BFF] hover:underline"
+                                            >
+                                                Replace
+                                            </label>
+
+                                            <button
+                                                type="button"
+                                                onClick={removeImage}
+                                                className="text-sm font-medium text-red-500 hover:underline"
+                                            >
+                                                Remove
+                                            </button>
+
+                                            <input
+                                                id="template-image-upload"
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/webp"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (!file) return;
+                                                    uploadImage(file);
+                                                }}
+                                            />
 
                                         </div>
 
                                     ) : (
 
-                                        <div className="text-center">
+                                        <div className="flex flex-col items-center gap-3 py-6 text-center">
 
-                                            <ImageIcon className="mx-auto mb-4 h-10 w-10 text-gray-400" />
+                                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#EEEDFE] text-[#635BFF]">
+                                                <ImageIcon className="h-5 w-5" />
+                                            </div>
 
-                                            <p className="mb-4 text-sm text-gray-500">
+                                            <p className="text-sm text-gray-500">
 
-                                                Upload Header Image
+                                                Upload a sample image
 
                                             </p>
 
-                                            <>
-                                                <input
-                                                    id="template-image-upload"
-                                                    type="file"
-                                                    accept="image/png,image/jpeg,image/webp"
-                                                    className="hidden"
-                                                    onChange={(e) => {
-                                                        const file = e.target.files?.[0];
+                                            <input
+                                                id="template-image-upload"
+                                                type="file"
+                                                accept="image/png,image/jpeg,image/webp"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
 
-                                                        if (!file) return;
+                                                    if (!file) return;
 
-                                                        uploadImage(file);
-                                                    }}
-                                                />
+                                                    uploadImage(file);
+                                                }}
+                                            />
 
-                                                <label
-                                                    htmlFor="template-image-upload"
-                                                    className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[#635BFF] px-5 py-2 text-sm text-white hover:bg-[#5148ff]"
-                                                >
-                                                    <Upload className="h-4 w-4" />
+                                            <label
+                                                htmlFor="template-image-upload"
+                                                className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-[#635BFF] px-5 py-2 text-sm text-white hover:bg-[#5148ff]"
+                                            >
+                                                <Upload className="h-4 w-4" />
 
-                                                    {uploadingImage ? "Uploading..." : "Upload Image"}
-                                                </label>
-                                            </>
+                                                {uploadingImage ? "Uploading..." : "Upload Image"}
+                                            </label>
 
                                         </div>
 
@@ -683,55 +959,108 @@ export default function TemplateEditorModal({
 
                         )}
 
-                        {/* Header Text */}
+                        {/* Header Text — always shown, optional */}
 
-                        {headerType === "TEXT" && (
+                        <div>
 
-                            <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
 
-                                <label className="mb-2 block text-sm font-medium">
+                                Header text <span className="font-normal text-gray-400">(optional)</span>
 
-                                    Header Text
+                            </label>
 
-                                </label>
+                            <input
+                                value={headerText}
+                                onChange={(e) => {
+                                    setHeaderText(e.target.value);
+                                    setIsDirty(true);
+                                }}
+                                placeholder="Appointment Reminder"
+                                className="w-full rounded-lg border px-3 py-2 text-sm"
+                            />
 
-                                <input
-                                    value={headerText}
-                                    onChange={(e) => {
-                                        setHeaderText(e.target.value);
-                                        setIsDirty(true);
-                                    }}
-                                    placeholder="Appointment Reminder"
-                                    className="w-full rounded-xl border px-4 py-3"
-                                />
+                            {headerType === "IMAGE" && (
+                                <p className="mt-1.5 text-xs text-gray-400">
+                                    Image headers can’t also carry header text on WhatsApp, so this won’t be submitted to Meta for image templates.
+                                </p>
+                            )}
 
-                            </div>
-
-                        )}
+                        </div>
 
                         {/* Body */}
 
                         <div>
 
-                            <label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                            <div className="mb-1 flex items-center justify-between">
 
-                                <FileText className="h-4 w-4" />
+                                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
 
-                                Message Body
+                                    <FileText className="h-3.5 w-3.5" />
 
-                            </label>
+                                    Message body
+
+                                </label>
+
+                                <button
+                                    type="button"
+                                    onClick={insertVariable}
+                                    className="rounded-md border border-[#635BFF] px-2.5 py-1 text-[11px] font-medium text-[#635BFF] hover:bg-[#F4F3FF]"
+                                >
+                                    {"+ Variable {{ }}"}
+                                </button>
+
+                            </div>
 
                             <textarea
-                                rows={8}
+                                ref={bodyRef}
+                                rows={6}
                                 value={body}
 
                                 onChange={(e) => {
                                     setBody(e.target.value);
                                     setIsDirty(true);
                                 }}
-                                placeholder="Hi {{1}}, welcome to Dispaz..."
-                                className="w-full rounded-xl border px-4 py-3 leading-7"
+                                placeholder={`Hi {{1}}, welcome to ${BRAND.name}...`}
+                                className="w-full rounded-lg border px-3 py-2 text-sm leading-6"
                             />
+
+                            {/* Variable Samples */}
+
+                            {(() => {
+                                const vars = Array.from(
+                                    body.matchAll(/\{\{(\d+)\}\}/g)
+                                ).map((m) => m[1]);
+                                const unique = [...new Set(vars)].sort(
+                                    (a, b) => Number(a) - Number(b)
+                                );
+                                if (!unique.length) return null;
+                                return (
+                                    <div className="mt-2 space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                        <p className="text-[11px] font-medium text-amber-700">
+                                            Sample values for variables (required by Meta)
+                                        </p>
+                                        {unique.map((v) => (
+                                            <div key={v} className="flex items-center gap-2">
+                                                <span className="w-12 shrink-0 text-xs font-mono text-amber-600">
+                                                    {`{{${v}}}`}
+                                                </span>
+                                                <input
+                                                    value={variableSamples[v] ?? ""}
+                                                    onChange={(e) => {
+                                                        setVariableSamples((prev) => ({
+                                                            ...prev,
+                                                            [v]: e.target.value,
+                                                        }));
+                                                        setIsDirty(true);
+                                                    }}
+                                                    placeholder={`e.g. ${v === "1" ? "John" : v === "2" ? "Order #1234" : "sample"}`}
+                                                    className="min-w-0 flex-1 rounded-md border bg-white px-2 py-1 text-xs"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
 
                         </div>
 
@@ -739,9 +1068,9 @@ export default function TemplateEditorModal({
 
                         <div>
 
-                            <label className="mb-2 block text-sm font-medium">
+                            <label className="mb-1 block text-xs font-medium text-gray-600">
 
-                                Footer
+                                Footer <span className="font-normal text-gray-400">(optional)</span>
 
                             </label>
 
@@ -752,8 +1081,8 @@ export default function TemplateEditorModal({
                                     setFooter(e.target.value);
                                     setIsDirty(true);
                                 }}
-                                placeholder="Powered by Dispaz"
-                                className="w-full rounded-xl border px-4 py-3"
+                                placeholder={`e.g. Powered by ${BRAND.name}`}
+                                className="w-full rounded-lg border px-3 py-2 text-sm"
                             />
 
                         </div>
@@ -761,31 +1090,33 @@ export default function TemplateEditorModal({
 
                         <div>
 
-                            <div className="mb-3 flex items-center justify-between">
+                            <div className="mb-2 flex items-center justify-between">
 
-                                <label className="text-sm font-medium">
+                                <label className="text-xs font-medium text-gray-600">
 
-                                    Action Buttons
+                                    Action buttons
 
                                 </label>
 
                                 <button
                                     type="button"
+                                    disabled={buttons.length >= 3}
                                     onClick={() => {
                                         setButtons([
                                             ...buttons,
                                             {
                                                 type: "QUICK_REPLY",
                                                 text: "",
+                                                url: "",
+                                                phoneNumber: "",
                                             },
                                         ]);
-                                        setIsDirty(true);;
-                                    }
-                                    }
-                                    className="rounded-lg bg-[#635BFF] px-3 py-2 text-xs font-medium text-white hover:bg-[#5148ff]"
+                                        setIsDirty(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 rounded-md bg-[#635BFF] px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-[#5148ff] disabled:opacity-40"
                                 >
 
-                                    + Add Button
+                                    <span className="leading-none">+</span> Add
 
                                 </button>
 
@@ -807,107 +1138,116 @@ export default function TemplateEditorModal({
 
                             ) : (
 
-                                <div className="space-y-4">
+                                <div className="space-y-3">
 
                                     {Array.isArray(buttons) &&
-                                        buttons.map((button, index) => (
+                                        buttons.map((button, index) => {
 
-                                            <div
-                                                key={index}
-                                                className="rounded-2xl border bg-gray-50 p-4"
-                                            >
+                                            const type =
+                                                (button.type || "").toUpperCase();
 
-                                                <div className="grid grid-cols-12 gap-3">
+                                            const updateButton = (
+                                                patch: Partial<TemplateButton>
+                                            ) => {
+                                                const updated = [...buttons];
+                                                updated[index] = {
+                                                    ...updated[index],
+                                                    ...patch,
+                                                };
+                                                setButtons(updated);
+                                                setIsDirty(true);
+                                            };
 
-                                                    <div className="col-span-4">
+                                            // A CTA type (website / phone) may only
+                                            // be used once. Disable it in this row's
+                                            // dropdown if another row already uses it.
+                                            const usedByOther = (t: string) =>
+                                                buttons.some(
+                                                    (b, i) =>
+                                                        i !== index &&
+                                                        (b.type || "").toUpperCase() === t
+                                                );
 
-                                                        <select
-                                                            value={button.type}
-                                                            onChange={(e) => {
+                                            return (
 
-                                                                const updated =
-                                                                    [...buttons];
+                                                <div
+                                                    key={index}
+                                                    className="flex items-center gap-2 rounded-xl border bg-gray-50 p-2"
+                                                >
 
-                                                                updated[index].type =
-                                                                    e.target.value;
-
-                                                                setButtons(updated);
-
-                                                            }}
-                                                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                                                    <select
+                                                        value={button.type}
+                                                        onChange={(e) =>
+                                                            updateButton({ type: e.target.value })
+                                                        }
+                                                        className="w-[120px] shrink-0 rounded-lg border bg-white px-2 py-1.5 text-xs"
+                                                    >
+                                                        <option
+                                                            value="URL"
+                                                            disabled={usedByOther("URL")}
                                                         >
+                                                            Visit website
+                                                        </option>
+                                                        <option
+                                                            value="PHONE_NUMBER"
+                                                            disabled={usedByOther("PHONE_NUMBER")}
+                                                        >
+                                                            Call phone
+                                                        </option>
+                                                        <option value="QUICK_REPLY">
+                                                            Quick reply
+                                                        </option>
+                                                    </select>
 
-                                                            <option value="QUICK_REPLY">
+                                                    <input
+                                                        value={button.text}
+                                                        onChange={(e) =>
+                                                            updateButton({ text: e.target.value })
+                                                        }
+                                                        placeholder="Label"
+                                                        maxLength={25}
+                                                        className="min-w-0 flex-1 rounded-lg border bg-white px-2 py-1.5 text-xs"
+                                                    />
 
-                                                                Quick Reply
-
-                                                            </option>
-
-                                                            <option value="URL">
-
-                                                                Visit Website
-
-                                                            </option>
-
-                                                            <option value="PHONE_NUMBER">
-
-                                                                Call Phone
-
-                                                            </option>
-
-                                                        </select>
-
-                                                    </div>
-
-                                                    <div className="col-span-7">
-
+                                                    {type === "URL" && (
                                                         <input
-                                                            value={button.text}
-                                                            onChange={(e) => {
-
-                                                                const updated =
-                                                                    [...buttons];
-
-                                                                updated[index].text =
-                                                                    e.target.value;
-
-                                                                setButtons(updated);
-
-                                                            }}
-                                                            placeholder="Button Text"
-                                                            className="w-full rounded-xl border px-3 py-2 text-sm"
+                                                            value={button.url ?? ""}
+                                                            onChange={(e) =>
+                                                                updateButton({ url: e.target.value })
+                                                            }
+                                                            placeholder="https://…"
+                                                            className="min-w-0 flex-1 rounded-lg border bg-white px-2 py-1.5 text-xs"
                                                         />
+                                                    )}
 
-                                                    </div>
+                                                    {type === "PHONE_NUMBER" && (
+                                                        <input
+                                                            value={button.phoneNumber ?? ""}
+                                                            onChange={(e) =>
+                                                                updateButton({ phoneNumber: e.target.value })
+                                                            }
+                                                            placeholder="918939989397"
+                                                            className="min-w-0 flex-1 rounded-lg border bg-white px-2 py-1.5 text-xs"
+                                                        />
+                                                    )}
 
-                                                    <div className="col-span-1">
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-
-                                                                setButtons(
-                                                                    buttons.filter(
-                                                                        (_, i) =>
-                                                                            i !== index
-                                                                    )
-                                                                );
-
-                                                            }}
-                                                            className="rounded-xl border px-3 py-2 text-red-500 hover:bg-red-50"
-                                                        >
-
-                                                            ×
-
-                                                        </button>
-
-                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setButtons(
+                                                                buttons.filter((_, i) => i !== index)
+                                                            )
+                                                        }
+                                                        aria-label="Remove button"
+                                                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500"
+                                                    >
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                    </button>
 
                                                 </div>
 
-                                            </div>
-
-                                        ))}
+                                            );
+                                        })}
 
                                 </div>
 
@@ -946,19 +1286,15 @@ export default function TemplateEditorModal({
 
                                 <button
                                     type="button"
-                                    onClick={handleClose}
-                                    className="rounded-xl border px-6 py-3 text-sm font-medium"
-                                >
-                                    Cancel
-                                </button>
-
-                                <button
-                                    type="button"
                                     onClick={async () => {
 
-                                        await saveTemplate();
+                                        const saved = await saveTemplate();
 
-                                        onClose();
+                                        // Only close if the save actually
+                                        // succeeded (validation may block it).
+                                        if (saved) {
+                                            onClose();
+                                        }
 
                                     }}
                                     disabled={saving || submitting}
@@ -979,6 +1315,13 @@ export default function TemplateEditorModal({
 
                                             const saved =
                                                 await saveTemplate(false);
+
+                                            // Save was blocked (validation) or
+                                            // failed — stop here. The user has
+                                            // already been shown the reason.
+                                            if (!saved) {
+                                                return;
+                                            }
 
                                             const id =
                                                 saved?.id ??
@@ -1056,19 +1399,28 @@ export default function TemplateEditorModal({
 
                 </div>
 
-                {/* RIGHT PANEL STARTS IN PART 2 */}
                 {/* RIGHT PANEL */}
 
-                <div className="flex-1 bg-[#EEF2F7]">
+                <div className="relative flex-1 bg-[#EEF2F7]">
 
-                    <div className="flex h-full items-center justify-center p-8">
+                    <button
+                        onClick={handleClose}
+                        className="absolute right-4 top-4 z-10 rounded-xl p-2 hover:bg-white/60"
+                    >
+                        <X className="h-5 w-5 text-gray-500" />
+                    </button>
+
+                    <div className="flex h-full items-center justify-center p-6">
 
                         <WhatsAppPreview
                             template={{
                                 headerType,
                                 headerText,
                                 headerImage,
-                                body,
+                                body: body.replace(
+                                    /\{\{(\d+)\}\}/g,
+                                    (_, n) => variableSamples[n] || `{{${n}}}`
+                                ),
                                 footer,
                                 buttons,
                             }}
