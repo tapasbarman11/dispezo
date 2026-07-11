@@ -13,10 +13,18 @@ export async function DELETE(req: NextRequest) {
             }, { status: 400 });
         }
 
+        // imagePath now looks like "/api/uploads/templates-media/xxx.png"
+        // (or the old "/uploads/templates-media/xxx.png" for legacy rows).
+        // Strip either prefix to get the real relative path on disk,
+        // which lives under public/uploads/...
+        const relativePath = imagePath
+            .replace(/^\/api\/uploads\//, "uploads/")
+            .replace(/^\/uploads\//, "uploads/");
+
         const filePath = path.join(
             process.cwd(),
             "public",
-            imagePath
+            relativePath
         );
 
         await fs.unlink(filePath);
