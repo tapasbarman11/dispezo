@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     console.log(path.join(uploadDir, filename));
     return NextResponse.json({
       success: true,
-      path: `/uploads/templates-media/${filename}`,
+      path: `/api/uploads/templates-media/${filename}`,
       name: filename,
       originalName: file.name,
       type: file.type,
