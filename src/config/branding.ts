@@ -2,7 +2,7 @@ export const BRAND = {
   name: "Dispezo",
   shortName: "Dispezo",
   slogan: "Empowering Digital Growth",
-  logo: "/Dispezo-logo.png",
+  logo: "/dispezo-logo.png",
   favicon: "/dispezo-favicon.png",
 
   company: {
