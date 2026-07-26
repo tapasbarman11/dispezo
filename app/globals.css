@@ -72,19 +72,19 @@
   --card-foreground: oklch(0.18 0.04 265);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.18 0.04 265);
-  --primary: oklch(0.58 0.22 265);
+  --primary: oklch(0.667 0.295 322);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.55 0.25 300);
+  --secondary: oklch(0.541 0.281 293);
   --secondary-foreground: oklch(0.99 0 0);
   --muted: oklch(0.965 0.008 255);
   --muted-foreground: oklch(0.5 0.03 260);
-  --accent: oklch(0.72 0.18 150);
+  --accent: oklch(0.685 0.215 8);
   --accent-foreground: oklch(0.99 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.92 0.012 260);
   --input: oklch(0.92 0.012 260);
-  --ring: oklch(0.58 0.22 265);
+  --ring: oklch(0.667 0.295 322);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -92,20 +92,32 @@
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.18 0.04 265);
   --sidebar-foreground: oklch(0.99 0 0);
-  --sidebar-primary: oklch(0.58 0.22 265);
+  --sidebar-primary: oklch(0.667 0.295 322);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.25 0.05 265);
   --sidebar-accent-foreground: oklch(0.99 0 0);
   --sidebar-border: oklch(1 0 0 / 0.08);
-  --sidebar-ring: oklch(0.58 0.22 265);
+  --sidebar-ring: oklch(0.667 0.295 322);
 
-  --brand-blue: oklch(0.58 0.22 265);
-  --brand-purple: oklch(0.55 0.25 300);
-  --brand-green: oklch(0.72 0.18 150);
+  /* Named brand palette (decorative use) */
+  --brand-pink: oklch(0.685 0.215 8);
+  --brand-magenta: oklch(0.667 0.295 322);
+  --brand-violet: oklch(0.541 0.281 293);
   --brand-navy: oklch(0.18 0.04 265);
-  --gradient-brand: linear-gradient(135deg, oklch(0.58 0.22 265) 0%, oklch(0.55 0.25 300) 60%, oklch(0.72 0.18 150) 100%);
+
+  /* Legacy token aliases — kept so existing brand-blue/brand-purple
+     classNames across the app pick up the new palette automatically */
+  --brand-blue: var(--brand-magenta);
+  --brand-purple: var(--brand-violet);
+
+  /* Semantic success/status color — intentionally kept a real green,
+     NOT part of the new brand gradient, so "Delivered" and "API Live"
+     indicators still read as success rather than decoration. */
+  --brand-green: oklch(0.72 0.19 150);
+
+  --gradient-brand: linear-gradient(180deg, oklch(0.685 0.215 8) 0%, oklch(0.667 0.295 322) 50%, oklch(0.541 0.281 293) 100%);
   --gradient-soft: linear-gradient(180deg, oklch(0.985 0.005 250) 0%, oklch(0.97 0.012 270) 100%);
-  --shadow-glow: 0 10px 40px -10px oklch(0.58 0.22 265 / 0.35);
+  --shadow-glow: 0 10px 40px -10px oklch(0.667 0.295 322 / 0.35);
   --shadow-card: 0 1px 2px oklch(0.18 0.04 265 / 0.04), 0 8px 24px -8px oklch(0.18 0.04 265 / 0.08);
 }
 
@@ -164,9 +176,11 @@
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid color-mix(in oklab, white 60%, transparent);
   }
+
   .gradient-brand {
     background-image: var(--gradient-brand);
   }
+
   .text-gradient-brand {
     background-image: var(--gradient-brand);
     -webkit-background-clip: text;

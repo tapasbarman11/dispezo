@@ -46,42 +46,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     flex
     flex-col
     bg-gradient-to-b
-    from-[#E8E0FF]
-    via-[#F8F6FF]
-    to-[#FFFFFF]
+   from-brand-purple/15
+via-brand-blue/5
+to-white
     border-r
     border-slate-200
     overflow-hidden
   "
       >
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div
-            className="
-      absolute
-      -top-28
-      left-1/2
-      -translate-x-1/2
-      h-80
-      w-80
-      rounded-full
-      bg-violet-500/25
-      blur-[120px]
-    "
-          />
+        <div className="pointer-events-none absolute -top-28 left-1/2 -translate-x-1/2 h-80 w-80 rounded-full bg-brand-purple/25 blur-[120px]" />
+        <div className="pointer-events-none absolute bottom-0 -left-20 h-72 w-72 rounded-full bg-brand-green/15 blur-[120px]" />
 
-          <div
-            className="
-      absolute
-      bottom-0
-      -left-20
-      h-72
-      w-72
-      rounded-full
-      bg-cyan-300/15
-      blur-[120px]
-    "
-          />
-        </div>
         {/* LOGO */}
         <div className="relative flex justify-center px-6 pt-8 pb-6">
           <img
@@ -95,7 +70,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       hover:scale-105"
           />
         </div>
-        <nav className="flex-1 px-4 py-3 space-y-2">
+        <nav className="relative flex-1 px-4 py-3 space-y-2">
           {nav.map((n) => {
             const Icon = n.icon;
 
@@ -122,32 +97,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     ${active
                     ? `
           bg-white
-          text-violet-700
+          text-brand-purple
           shadow-lg
           border
           border-white
         `
-                    : `
-          text-slate-700
-          hover:bg-violet-100
-          hover:text-violet-700
-          hover:shadow-md
-          hover:border
-          hover:border-violet-200
-        `
+                    : `text-slate-700 hover:bg-brand-purple/10 hover:text-brand-purple hover:shadow-md hover:border hover:border-brand-purple/30`
                   }
   `}
               >
                 {n.label}
 
                 {active && (
-                  <span className="ml-auto size-1.5 rounded-full bg-gradient-to-r from-violet-500 to-cyan-400" />
+                  <span className="ml-auto size-1.5 rounded-full gradient-brand" />
                 )}
               </Link>
             );
           })}
         </nav>
-        <div className="p-4 border-t border-white/10">
+        <div className="relative p-4 border-t border-white/10">
           <button
             onClick={() =>
               signOut({
@@ -177,7 +145,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             Logout
           </button>
         </div>
-        <div className="p-4">
+        <div className="relative p-4">
           <div
             className="
     rounded-2xl
@@ -222,7 +190,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            <div className="h-10 w-10 rounded-full bg-gradient-to-r from-violet-500 to-blue-500 flex items-center justify-center text-white font-semibold">
+            <div className="h-10 w-10 rounded-full gradient-brand flex items-center justify-center text-white font-semibold">
               {session?.user?.name?.charAt(0)}
             </div>
           </div>

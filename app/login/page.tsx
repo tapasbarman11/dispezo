@@ -108,8 +108,21 @@ export default function LoginPage() {
           </div>
 
           <p className="text-xs text-muted-foreground text-center mt-6">
-            By continuing, you agree to our Terms of Service and Privacy
-            Policy.
+            By continuing, you agree to our{" "}
+            <Link
+              href="/terms"
+              className="font-medium text-gradient-brand underline decoration-2 underline-offset-2 hover:opacity-80"
+            >
+              Terms of Service
+            </Link>
+            {" "}and{" "}
+            <Link
+              href="/privacy"
+              className="font-medium text-gradient-brand underline decoration-2 underline-offset-2 hover:opacity-80"
+            >
+              Privacy Policy
+            </Link>
+            .
           </p>
         </div>
       </div>

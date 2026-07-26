@@ -8,17 +8,20 @@ module.exports = {
 
   theme: {
     extend: {
-      colors: {
+     colors: {
         brand: {
           navy: "#0B1020",
-          blue: "#6366F1",
-          purple: "#A855F7",
-          green: "#22C55E",
+          blue: "#D946EF",   // alias → magenta, kept so existing brand-blue classes update automatically
+          purple: "#7C3AED", // now violet
+          pink: "#FF3B82",
+          magenta: "#D946EF",
+          violet: "#7C3AED",
+          green: "#22C55E",  // kept as real green — semantic success color, not part of the new gradient
         },
       },
 
       boxShadow: {
-        glow: "0 0 40px rgba(99,102,241,0.35)",
+        glow: "0 0 40px rgba(217,70,239,0.35)",
         card: "0 10px 30px rgba(0,0,0,0.08)",
       },
 

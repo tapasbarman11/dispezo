@@ -21,7 +21,7 @@ export default function Home() {
       {/* Nav */}
       <header className="relative z-10 px-6 md:px-12 py-6 flex items-center justify-between max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
-   <img src={BRAND.logo} alt={BRAND.name} className="h-20 w-20 " />
+   <img src={BRAND.logo} alt={BRAND.name} className="h-20 w-auto" />
         </div>
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
           <a className="hover:text-foreground transition" href="#features">Features</a>

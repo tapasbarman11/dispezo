@@ -1,13 +1,13 @@
 export const BRAND = {
-  name: "Dispaz",
-  shortName: "Dispaz",
+  name: "Dispezo",
+  shortName: "Dispezo",
   slogan: "Empowering Digital Growth",
-  logo: "/Dispaz-logo.png",
-  favicon: "/favicon.ico",
+  logo: "/Dispezo-logo.png",
+  favicon: "/dispezo-favicon.png",
 
   company: {
-    name: "Dispaz Inc.",
-    website: "https://dispaz.com",
-    supportEmail: "support@Dispaz.com",
+    name: "Dispezo Inc.",
+    website: "https://dispezo.com",
+    supportEmail: "contact@dispezo.com",
   },
 };
