@@ -230,7 +230,7 @@ export function WhatsAppStep({
     }
 
     window.FB.login(
-      async (response: any) => {
+      (response: any) => {
         console.log('FB.login response:', response);
 
         if (!response?.authResponse?.code) {
@@ -241,6 +241,8 @@ export function WhatsAppStep({
           return;
         }
 
+        // FB.login rejects async callbacks, so the awaiting work runs here.
+        void (async () => {
         /*
          * Meta's postMessage event can arrive immediately before
          * or immediately after the FB.login callback. Give it a
@@ -308,6 +310,7 @@ export function WhatsAppStep({
               'Unable to complete WhatsApp onboarding.'
           );
         }
+        })();
       },
       {
         config_id: configId,
