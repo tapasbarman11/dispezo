@@ -94,30 +94,11 @@ declare global {
   }
 }
 
-function WhatsAppIcon({ className = 'w-8 h-8' }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 32 32"
-      fill="currentColor"
-      className={className}
-    >
-      <path d="M19.11 17.32c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.28-.47-2.43-1.5-.9-.8-1.5-1.8-1.67-2.1-.17-.3-.02-.47.13-.62.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.08-.8.37-.27.3-1.05 1.02-1.05 2.47s1.07 2.85 1.22 3.05c.15.2 2.08 3.18 5.04 4.46.7.3 1.25.48 1.67.62.7.22 1.34.19 1.85.12.56-.08 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.08-.12-.27-.2-.57-.35z" />
-      <path d="M16 3C8.82 3 3 8.82 3 16c0 2.56.75 5.05 2.15 7.18L3 29l5.98-2.1A12.94 12.94 0 0016 29c7.18 0 13-5.82 13-13S23.18 3 16 3zm0 23.5c-2.07 0-4.1-.56-5.86-1.63l-.42-.25-3.55 1.25 1.2-3.46-.28-.44A10.46 10.46 0 015.5 16C5.5 10.2 10.2 5.5 16 5.5S26.5 10.2 26.5 16 21.8 26.5 16 26.5z" />
-    </svg>
-  );
-}
-
-export function WhatsAppStep({
-  data,
-  onChange,
   error,
 }: Props) {
   const router = useRouter();
 
   const [connecting, setConnecting] = useState(false);
-  const [accessToken, setAccessToken] = useState('');
-  const [wabaId, setWabaId] = useState('');
-  const [verifying, setVerifying] = useState(false);
   const [embedError, setEmbedError] = useState('');
 
   /*
@@ -343,58 +324,6 @@ export function WhatsAppStep({
     );
   };
 
-  const verifyManualConnection = async () => {
-    if (
-      !accessToken.trim() ||
-      !wabaId.trim()
-    ) {
-      alert(
-        'Please enter your Access Token and WABA ID.'
-      );
-      return;
-    }
-
-    try {
-      setVerifying(true);
-
-      const res = await fetch(
-        '/api/onboarding/verify-whatsapp',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            accessToken,
-            wabaId,
-          }),
-        }
-      );
-
-      const result = await res.json();
-
-      if (!result.success) {
-        throw new Error(
-          result.error ||
-            result.message ||
-            'Unable to verify WhatsApp.'
-        );
-      }
-
-      onChange({
-        whatsappConnected: true,
-      });
-
-      setTimeout(() => {
-        router.push('/whatsapp');
-      }, 1000);
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setVerifying(false);
-    }
-  };
-
   return (
     <div className="px-9 py-7">
       <div className="grid grid-cols-4 gap-3 mb-6">
@@ -510,93 +439,6 @@ export function WhatsAppStep({
                   {text}
                 </div>
               ))}
-            </div>
-
-            <div className="flex items-center my-8">
-              <div className="flex-1 h-px bg-slate-200" />
-
-              <span className="px-4 text-sm text-slate-500 font-medium">
-                OR
-              </span>
-
-              <div className="flex-1 h-px bg-slate-200" />
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-left">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="ml-3 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#25D366]">
-                  <WhatsAppIcon className="h-4 w-4 text-white" />
-                </div>
-
-                <div>
-                  <h3 className="font-semibold text-base">
-                    Manual WhatsApp Connection
-                  </h3>
-
-                  <p className="text-sm text-slate-500">
-                    Connect using your existing WhatsApp
-                    Cloud API Access Token.
-                  </p>
-                </div>
-              </div>
-
-              <label className="block text-sm font-medium mb-2">
-                WhatsApp Cloud API Access Token
-              </label>
-
-              <input
-                type="password"
-                value={accessToken}
-                onChange={(e) =>
-                  setAccessToken(e.target.value)
-                }
-                placeholder="EAAGxxxxxxxxxxxxxxxxxxxx"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-              />
-
-              <div className="mt-5">
-                <label className="block text-sm font-medium mb-2">
-                  WhatsApp Business Account ID (WABA ID)
-                </label>
-
-                <input
-                  type="text"
-                  value={wabaId}
-                  onChange={(e) =>
-                    setWabaId(e.target.value)
-                  }
-                  placeholder="123456789012345"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Available in Meta Business Portfolio →
-                  WhatsApp Accounts or under the WhatsApp
-                  API Setup page.
-                </p>
-              </div>
-
-              <p className="mt-2 text-xs text-slate-500">
-                Permanent System User Access Token is
-                recommended. The token is securely encrypted
-                before being stored.
-              </p>
-
-              <button
-                type="button"
-                onClick={verifyManualConnection}
-                disabled={verifying}
-                className="mt-5 w-full h-11 rounded-xl bg-[#25D366] text-white font-semibold hover:bg-[#22c55e] transition"
-              >
-                {verifying ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin inline" />
-                    Verifying Connection...
-                  </>
-                ) : (
-                  'Verify & Connect'
-                )}
-              </button>
             </div>
           </div>
         </>
