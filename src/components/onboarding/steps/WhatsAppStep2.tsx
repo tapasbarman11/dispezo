@@ -328,9 +328,6 @@ export function WhatsAppStep({
       {
         config_id: configId,
 
-        response_type: 'code',
-        override_default_response_type: true,
-
         /*
          * Required for WhatsApp Business App Coexistence.
          */
