@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
-import { LogOut } from "lucide-react";
+import { LogOut, Star } from "lucide-react";
 import {
   LayoutDashboard,
   MessageCircle,
@@ -21,6 +21,7 @@ const nav = [
   { to: "/contacts", label: "Contacts", icon: Users },
   { to: "/templates", label: "Templates", icon: FileText },
   { to: "/broadcasts", label: "Broadcasts", icon: Send },
+  { to: "/google-reviews", label: "Google Reviews", icon: Star },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },
 ];

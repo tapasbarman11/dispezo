@@ -451,6 +451,7 @@ export default function BroadcastsPage() {
             ))}
           </div>
 
+
         </div>
 
         {/* Live preview — reusing the existing WhatsAppPreview component */}
@@ -470,9 +471,8 @@ export default function BroadcastsPage() {
         </div>
 
       </div>
-
-      {/* Recent Broadcasts — full width, paginated */}
-      <div className="mt-8 glass rounded-2xl shadow-[var(--shadow-card)] overflow-hidden">
+      {/* Recent Broadcasts — paginated table */}
+      <div className="glass rounded-2xl shadow-[var(--shadow-card)] overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
           <h3 className="font-semibold text-sm">Recent Broadcasts</h3>
         </div>
@@ -527,7 +527,6 @@ export default function BroadcastsPage() {
           </div>
         )}
       </div>
-
       {/* CSV Upload Modal */}
       {showUpload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
