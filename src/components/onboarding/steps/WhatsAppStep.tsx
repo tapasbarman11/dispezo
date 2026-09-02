@@ -94,6 +94,9 @@ declare global {
   }
 }
 
+export function WhatsAppStep({
+  data,
+  onChange,
   error,
 }: Props) {
   const router = useRouter();
