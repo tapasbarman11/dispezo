@@ -215,7 +215,7 @@ export async function POST(
 
     const phoneNumbers =
       await metaGet(
-        `/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,messaging_limit`,
+        `/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_manager_messaging_limit`,
         accessToken
       );
 
@@ -552,7 +552,7 @@ export async function POST(
           phoneNumber.quality_rating ||
             null,
 
-          phoneNumber.messaging_limit ||
+          phoneNumber.whatsapp_business_manager_messaging_limit ||
             null,
 
           appId,
