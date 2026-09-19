@@ -116,12 +116,15 @@ export async function POST(req: Request) {
       ]
     );
 
-    return NextResponse.json({
-      success: true,
-      organizationId:
-        organizationResult.rows[0].id,
-      mode: "created",
-    });
+    const organizationId = organizationResult.rows[0].id;
+    await pool.query(
+      `INSERT INTO organization_members
+        (organization_id,user_id,role,status,created_at,updated_at)
+       VALUES($1,$2,'OWNER','ACTIVE',NOW(),NOW())
+       ON CONFLICT (organization_id,user_id) DO NOTHING`,
+      [organizationId, userId]
+    );
+    return NextResponse.json({ success:true, organizationId, mode:"created" });
   } catch (error: any) {
     console.error(
       "CREATE ORGANIZATION ERROR:",
