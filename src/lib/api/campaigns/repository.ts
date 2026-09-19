@@ -59,7 +59,7 @@ export async function createCampaign(data: CreateCampaignInput): Promise<Campaig
        unit_cost, total_cost, scheduled_at, started_at, variable_mapping,
        manual_variable_values, created_at)
      VALUES
-      (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,$7*$8,$9,
+      (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,$7::numeric * $8::numeric,$9,
        CASE WHEN $9 IS NULL THEN NOW() ELSE NULL END,$10::jsonb,$11::jsonb,NOW())
      RETURNING ${select.replace(/^\s*SELECT[\s\S]*?\s+FROM campaigns$/, "*")}`,
     [data.organizationId, data.campaignName.trim(), data.templateName, data.templateCategory.toUpperCase(), data.audienceTag, status, data.totalContacts, data.unitCost, data.scheduledAt ?? null, JSON.stringify(data.variableMapping ?? {}), JSON.stringify(data.manualVariableValues ?? {})]
