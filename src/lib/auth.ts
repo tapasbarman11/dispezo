@@ -52,12 +52,21 @@ export const authOptions: NextAuthOptions = {
             `
             SELECT
               u.id,
-              o.id AS organization_id
+              COALESCE(m.organization_id, o.id) AS organization_id,
+              COALESCE(m.role, 'OWNER') AS role,
+              COALESCE(org.plan_code, 'FREE') AS plan_code
             FROM users u
-            LEFT JOIN organizations o
-              ON o.owner_user_id = u.id
-              AND o.is_default = true
-            WHERE u.email = $1
+            LEFT JOIN organizations o ON o.owner_user_id=u.id AND o.is_default=true
+            LEFT JOIN LATERAL (
+              SELECT om.organization_id, om.role
+              FROM organization_members om
+              JOIN organizations mo ON mo.id=om.organization_id
+              WHERE om.user_id=u.id AND om.status='ACTIVE'
+              ORDER BY CASE WHEN om.role='OWNER' THEN 0 ELSE 1 END, mo.is_default DESC, om.created_at ASC
+              LIMIT 1
+            ) m ON true
+            LEFT JOIN organizations org ON org.id=COALESCE(m.organization_id,o.id)
+            WHERE u.email=$1
             LIMIT 1
             `,
             [token.email]
@@ -67,8 +76,9 @@ export const authOptions: NextAuthOptions = {
 
           if (result.rows.length > 0) {
             token.userId = result.rows[0].id;
-            token.organizationId =
-              result.rows[0].organization_id;
+            token.organizationId = result.rows[0].organization_id;
+            token.role = result.rows[0].role;
+            token.planCode = result.rows[0].plan_code;
           } else {
             /*
              * New user.
@@ -103,8 +113,9 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id =
           token.userId;
 
-        (session.user as any).organizationId =
-          token.organizationId;
+        (session.user as any).organizationId = token.organizationId;
+        (session.user as any).role = token.role;
+        (session.user as any).planCode = token.planCode;
       }
 
       return session;
