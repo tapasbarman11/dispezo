@@ -4,10 +4,83 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
 import {
+    loadTemplates,
     createTemplate,
     updateTemplate,
     deleteTemplateService,
 } from "@/lib/api/templates/service";
+
+//-----------------------------------------------------
+// GET
+// Return templates belonging to the signed-in organization.
+//-----------------------------------------------------
+
+export async function GET() {
+
+    try {
+
+        const session =
+            await getServerSession(
+                authOptions
+            );
+
+        const organizationId =
+            (session?.user as any)?.organizationId;
+
+        if (!organizationId) {
+
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: "Unauthorized",
+                },
+                {
+                    status: 401,
+                }
+            );
+
+        }
+
+        const templates =
+            await loadTemplates(
+                organizationId
+            );
+
+        return NextResponse.json({
+
+            success: true,
+
+            templates,
+
+        });
+
+    } catch (error: any) {
+
+        console.error(
+            "Get templates error:",
+            error
+        );
+
+        return NextResponse.json(
+            {
+                success: false,
+                templates: [],
+                message:
+                    error.message ||
+                    "Failed to load templates.",
+            },
+            {
+                status: 500,
+            }
+        );
+
+    }
+
+}
+
+//-----------------------------------------------------
+// POST
+//-----------------------------------------------------
 
 export async function POST(
     req: NextRequest
@@ -230,6 +303,7 @@ export async function PUT(
     }
 
 }
+
 //-----------------------------------------------------
 // DELETE
 //-----------------------------------------------------

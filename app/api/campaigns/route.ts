@@ -3,153 +3,79 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createCampaign, listCampaigns } from "@/lib/api/campaigns/repository";
 import { getContactsByTag } from "@/lib/api/contacts/repository";
+import { getTemplateByName } from "@/lib/api/campaigns/template";
 
-//-----------------------------------------------------
-// GET — list campaigns (paginated)
-//-----------------------------------------------------
-
-export async function GET(req: NextRequest) {
-
-    try {
-
-        const session = await getServerSession(authOptions);
-
-        const organizationId =
-            (session?.user as any)?.organizationId;
-
-        if (!organizationId) {
-
-            return NextResponse.json(
-                { success: false, message: "Unauthorized" },
-                { status: 401 }
-            );
-
-        }
-
-        const { searchParams } = new URL(req.url);
-
-        const page =
-            parseInt(searchParams.get("page") || "1", 10);
-
-        const pageSize = 10;
-
-        const { campaigns, total } = await listCampaigns(
-            organizationId,
-            page,
-            pageSize
-        );
-
-        return NextResponse.json({
-            success: true,
-            campaigns,
-            total,
-            page,
-            pageSize,
-            totalPages: Math.max(1, Math.ceil(total / pageSize)),
-        });
-
-    } catch (err: any) {
-
-        console.error("List campaigns error:", err);
-
-        return NextResponse.json(
-            { success: false, message: "Failed to load campaigns." },
-            { status: 500 }
-        );
-
-    }
-
+async function organizationId() {
+  const session = await getServerSession(authOptions);
+  return (session?.user as any)?.organizationId as string | undefined;
 }
 
-//-----------------------------------------------------
-// POST — create a campaign (queues it; actual sending
-// is picked up by the background processor)
-//-----------------------------------------------------
+function templateUnitCost(category: string) {
+  const key = category.toUpperCase();
+  const configured = key === "MARKETING" ? process.env.WHATSAPP_MARKETING_RATE : key === "UTILITY" ? process.env.WHATSAPP_UTILITY_RATE : key === "AUTHENTICATION" ? process.env.WHATSAPP_AUTHENTICATION_RATE : undefined;
+  const value = Number(configured);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const org = await organizationId();
+    if (!org) return NextResponse.json({ success:false, message:"Unauthorized" }, {status:401});
+    const url = new URL(req.url);
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 10)));
+    const { campaigns, total } = await listCampaigns(org, page, pageSize);
+    return NextResponse.json({ success:true, campaigns:campaigns.map((c:any)=>({...c,cost:c.totalCost,executionDurationSeconds:c.executionDurationMs==null?null:Math.round(c.executionDurationMs/1000)})), total, page, pageSize, totalPages:Math.max(1,Math.ceil(total/pageSize)) });
+  } catch (error:any) {
+    return NextResponse.json({success:false,message:error.message||"Failed to load campaigns."},{status:500});
+  }
+}
 
 export async function POST(req: NextRequest) {
+  try {
+    const org = await organizationId();
+    if (!org) return NextResponse.json({success:false,message:"Unauthorized"},{status:401});
+    const body = await req.json();
+    const { campaignName, templateName, audienceTag, variableMapping = {}, manualVariableValues = {}, scheduledAt = null } = body;
+    if (!campaignName?.trim() || !templateName || !audienceTag) return NextResponse.json({success:false,message:"Campaign name, template and audience are required."},{status:400});
 
-    try {
+    const template = await getTemplateByName(org, templateName);
+    if (!template) return NextResponse.json({success:false,message:"Template not found."},{status:404});
+    if ((template.status || "").toUpperCase() !== "APPROVED") return NextResponse.json({success:false,message:"Only approved templates can be broadcast."},{status:400});
 
-        const session = await getServerSession(authOptions);
+    const contacts = await getContactsByTag(org, audienceTag);
+    if (!contacts.length) return NextResponse.json({success:false,message:`No contacts found under audience "${audienceTag}".`},{status:400});
 
-        const organizationId =
-            (session?.user as any)?.organizationId;
+    const parsedSchedule = scheduledAt ? new Date(scheduledAt) : null;
+    if (parsedSchedule && Number.isNaN(parsedSchedule.getTime())) return NextResponse.json({success:false,message:"Invalid scheduled date/time."},{status:400});
+    if (parsedSchedule && parsedSchedule.getTime() <= Date.now()) return NextResponse.json({success:false,message:"Scheduled time must be in the future."},{status:400});
 
-        if (!organizationId) {
+    const campaign = await createCampaign({
+      organizationId:org,
+      campaignName,
+      templateName,
+      templateCategory:template.category || "MARKETING",
+      audienceTag,
+      totalContacts:contacts.length,
+      unitCost:templateUnitCost(template.category || "MARKETING"),
+      variableMapping,
+      manualVariableValues,
+      scheduledAt:parsedSchedule,
+    });
 
-            return NextResponse.json(
-                { success: false, message: "Unauthorized" },
-                { status: 401 }
-            );
-
-        }
-
-        const body = await req.json();
-
-        const { campaignName, templateName, audienceTag } = body;
-
-        if (!campaignName || !templateName || !audienceTag) {
-
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: "Campaign name, template, and audience are required.",
-                },
-                { status: 400 }
-            );
-
-        }
-
-        // Resolve the actual send list now so we can store an
-        // accurate total_contacts count on the campaign.
-        const contacts = await getContactsByTag(
-            organizationId,
-            audienceTag
-        );
-
-        if (contacts.length === 0) {
-
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: `No contacts found under audience "${audienceTag}".`,
-                },
-                { status: 400 }
-            );
-
-        }
-
-        const campaign = await createCampaign({
-            organizationId,
-            campaignName,
-            templateName,
-            totalContacts: contacts.length,
-            audienceTag,
-        });
-
-        // NOTE: Actual message sending is intentionally not done
-        // here — a background processor (Coolify Scheduled Task
-        // hitting /api/campaigns/send) drains queued campaigns in
-        // small batches. This keeps this request fast regardless
-        // of audience size and avoids request-timeout risk.
-
-        return NextResponse.json({
-            success: true,
-            campaign,
-        });
-
-    } catch (err: any) {
-
-        console.error("Create campaign error:", err);
-
-        return NextResponse.json(
-            {
-                success: false,
-                message: err.message || "Failed to create campaign.",
-            },
-            { status: 500 }
-        );
-
-    }
-
+    // Both Send Now and Scheduled campaigns are executed by the Dispezo
+    // campaign worker. Send Now is persisted as IN_PROGRESS and picked up
+    // on the next worker tick; Scheduled is persisted as SCHEDULED.
+    return NextResponse.json({
+      success:true,
+      campaign:{
+        ...campaign,
+        cost:campaign.totalCost,
+        executionDurationSeconds:campaign.executionDurationMs==null?null:Math.round(campaign.executionDurationMs/1000)
+      }
+    }, { status: 201 });
+  } catch (error:any) {
+    console.error("Create campaign error",error);
+    return NextResponse.json({success:false,message:error.message||"Failed to create campaign."},{status:500});
+  }
 }
