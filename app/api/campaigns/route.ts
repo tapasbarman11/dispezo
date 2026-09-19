@@ -4,17 +4,15 @@ import { authOptions } from "@/lib/auth";
 import { createCampaign, listCampaigns } from "@/lib/api/campaigns/repository";
 import { getContactsByTag } from "@/lib/api/contacts/repository";
 import { getTemplateByName } from "@/lib/api/campaigns/template";
+import { getMetaRate } from "@/lib/meta/pricing";
 
 async function organizationId() {
   const session = await getServerSession(authOptions);
   return (session?.user as any)?.organizationId as string | undefined;
 }
 
-function templateUnitCost(category: string) {
-  const key = category.toUpperCase();
-  const configured = key === "MARKETING" ? process.env.WHATSAPP_MARKETING_RATE : key === "UTILITY" ? process.env.WHATSAPP_UTILITY_RATE : key === "AUTHENTICATION" ? process.env.WHATSAPP_AUTHENTICATION_RATE : undefined;
-  const value = Number(configured);
-  return Number.isFinite(value) ? value : 0;
+async function templateUnitCost(category: string, volume: number) {
+  return getMetaRate(category, volume, "INR", "IN");
 }
 
 export async function GET(req: NextRequest) {
@@ -57,7 +55,7 @@ export async function POST(req: NextRequest) {
       templateCategory:template.category || "MARKETING",
       audienceTag,
       totalContacts:contacts.length,
-      unitCost:templateUnitCost(template.category || "MARKETING"),
+      unitCost:await templateUnitCost(template.category || "MARKETING", contacts.length),
       variableMapping,
       manualVariableValues,
       scheduledAt:parsedSchedule,
