@@ -1,5 +1,6 @@
 import { encrypt, decrypt, } from "@/lib/crypto";
 import { verifyWhatsAppConnection } from "@/lib/meta/status";
+import { assertCanAddWhatsAppNumber } from "@/lib/billing/access";
 
 import {
   getConnection,
@@ -30,6 +31,7 @@ export async function saveConnection(
   );
 console.log("SERVICE META");
 console.log(meta);
+  await assertCanAddWhatsAppNumber(organizationId, meta.phoneNumberId);
   const encryptedToken = encrypt(accessToken);
 
   const connection = await saveConnectionRepository({
