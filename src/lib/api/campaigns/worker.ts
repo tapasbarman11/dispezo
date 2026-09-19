@@ -13,6 +13,7 @@ import {
 import { recordMessageSent, maybeFinalizeCampaign } from "./tracking";
 import { getContactsByTag, Contact } from "@/lib/api/contacts/repository";
 import { getTemplateByName } from "./template";
+import { maybeSyncMetaPricing } from "@/lib/meta/pricing";
 
 const DEFAULT_BATCH_SIZE = 50;
 const DEFAULT_CAMPAIGN_LIMIT = 3;
@@ -182,6 +183,7 @@ export async function executeDueCampaigns(
   limit = DEFAULT_CAMPAIGN_LIMIT,
   batchSize = DEFAULT_BATCH_SIZE
 ) {
+  await maybeSyncMetaPricing("INR");
   await pool.query(`DELETE FROM broadcast_message_tracking WHERE expires_at < NOW()`);
 
   const client = await pool.connect();
