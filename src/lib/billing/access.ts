@@ -1,5 +1,20 @@
 import pool from "@/lib/db";
-import { getOrganizationPlan, PLAN_LIMITS } from "./plans";
+import { PLAN_LIMITS, normalizePlan } from "./plans";
+
+export async function getOrganizationPlan(organizationId: string) {
+  const result = await pool.query(
+    `SELECT plan_code AS "planCode", subscription_status AS "subscriptionStatus"
+     FROM organizations WHERE id=$1 LIMIT 1`,
+    [organizationId]
+  );
+  if (!result.rows.length) throw new Error("Organization not found.");
+  const planCode = normalizePlan(result.rows[0].planCode);
+  return {
+    planCode,
+    subscriptionStatus: result.rows[0].subscriptionStatus || "ACTIVE",
+    limits: PLAN_LIMITS[planCode],
+  };
+}
 
 export async function getOrganizationMemberRole(organizationId: string, userId: string) {
   const result = await pool.query(
