@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { encrypt } from "@/lib/crypto";
 import pool from "@/lib/db";
+import { assertCanAddWhatsAppNumber } from "@/lib/billing/access";
 
 const META_API_VERSION =
   process.env.META_API_VERSION || "v23.0";
@@ -253,6 +254,8 @@ export async function POST(
     const phoneNumberId =
       phoneNumber.id;
 
+    await assertCanAddWhatsAppNumber(organizationId, phoneNumberId);
+
     /*
      * --------------------------------------------------
      * 5. Determine business ID
@@ -454,7 +457,7 @@ export async function POST(
           NOW(),
           NOW()
         )
-        ON CONFLICT (organization_id)
+        ON CONFLICT (phone_number_id)
         DO UPDATE SET
           created_by_user_id =
             EXCLUDED.created_by_user_id,
