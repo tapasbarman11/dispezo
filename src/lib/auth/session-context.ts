@@ -6,21 +6,9 @@ export async function getSessionContext() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return null;
 
-  const sessionUser = session.user as any;
-
-  // Prefer the organization already resolved by NextAuth, but always have
-  // a DB fallback. This makes APIs resilient immediately after onboarding
-  // and for older browser sessions whose JWT predates organization creation.
-  if (sessionUser.organizationId && sessionUser.id) {
-    return {
-      session,
-      userId: String(sessionUser.id),
-      organizationId: String(sessionUser.organizationId),
-      role: sessionUser.role ?? "OWNER",
-      planCode: sessionUser.planCode ?? "FREE",
-    };
-  }
-
+  // Always resolve the current organization from the database rather than
+  // trusting an older JWT value. This is important immediately after
+  // onboarding and when a user's active organization membership changes.
   const result = await pool.query(
     `
     SELECT
