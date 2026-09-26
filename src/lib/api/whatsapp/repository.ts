@@ -12,7 +12,7 @@ export interface WhatsAppConnection {
 }
 
 export async function getConnections(organizationId:string):Promise<WhatsAppConnection[]> {
-  const r=await pool.query(`SELECT * FROM whatsapp_accounts WHERE organization_id=$1 ORDER BY created_at ASC`,[organizationId]);
+  const r=await pool.query(`SELECT * FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected')<>'deleted' ORDER BY COALESCE(last_synced_at,connected_at,created_at) DESC`,[organizationId]);
   return r.rows;
 }
 export async function getConnection(organizationId:string){return (await getConnections(organizationId))[0]??null;}
@@ -41,7 +41,7 @@ export async function saveConnection(data:SaveConnectionInput){
       status='connected',webhook_status='active',last_synced_at=NOW()
     RETURNING *`,
     [data.organizationId,data.createdByUserId,data.businessId,data.businessName,data.wabaId,data.phoneNumberId,
-     data.accessToken,data.displayPhoneNumber,data.verifiedName,data.qualityRating,data.messagingLimit]);
+    data.accessToken,data.displayPhoneNumber,data.verifiedName,data.qualityRating,data.messagingLimit]);
   return r.rows[0];
 }
 
