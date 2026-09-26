@@ -65,7 +65,7 @@ export async function createCampaign(data: CreateCampaignInput): Promise<Campaig
        manual_variable_values, created_at)
      VALUES
       (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,0,0,0,0,$8,$9,$10,
-       CASE WHEN $10 IS NULL THEN NOW() ELSE NULL END,$11::jsonb,$12::jsonb,NOW())
+       CASE WHEN $10::timestamptz IS NULL THEN NOW() ELSE NULL END,$11::jsonb,$12::jsonb,NOW())
      RETURNING *`,
     [
       data.organizationId,
