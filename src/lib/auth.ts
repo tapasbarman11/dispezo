@@ -23,9 +23,6 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, account, profile }) {
-      /*
-       * Google login
-       */
       if (account) {
         token.googleId = account.providerAccountId;
 
@@ -34,15 +31,6 @@ export const authOptions: NextAuthOptions = {
             (profile as { picture?: string }).picture || null;
         }
       }
-
-      /*
-       * IMPORTANT:
-       *
-       * Do not require the user to already exist in DB
-       * just to have a valid authenticated session.
-       *
-       * A new Google user must be allowed to enter onboarding.
-       */
 
       if (token.email) {
         console.log("JWT email:", token.email);
@@ -80,22 +68,11 @@ export const authOptions: NextAuthOptions = {
             token.role = result.rows[0].role;
             token.planCode = result.rows[0].plan_code;
           } else {
-            /*
-             * New user.
-             *
-             * The user does NOT need a DB record yet.
-             * Onboarding will create it.
-             */
             token.userId = undefined;
             token.organizationId = undefined;
           }
         } catch (err) {
           console.error("JWT DB Error:", err);
-
-          /*
-           * Do not destroy Google authentication because
-           * the DB lookup failed.
-           */
         }
       }
 
@@ -104,18 +81,62 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).googleId =
-          token.googleId;
-
-        (session.user as any).picture =
-          token.picture;
-
-        (session.user as any).id =
-          token.userId;
-
+        (session.user as any).googleId = token.googleId;
+        (session.user as any).picture = token.picture;
+        (session.user as any).id = token.userId;
         (session.user as any).organizationId = token.organizationId;
         (session.user as any).role = token.role;
         (session.user as any).planCode = token.planCode;
+
+        // Re-resolve the current organization on every server session read.
+        // This is important immediately after onboarding creates the user's
+        // organization: the existing JWT can predate that organization.
+        // It also makes older sessions resilient to membership changes.
+        if (session.user.email) {
+          try {
+            const result = await pool.query(
+              `
+              SELECT
+                u.id,
+                COALESCE(m.organization_id, o.id) AS organization_id,
+                COALESCE(m.role, 'OWNER') AS role,
+                COALESCE(org.plan_code, 'FREE') AS plan_code
+              FROM users u
+              LEFT JOIN organizations o
+                ON o.owner_user_id = u.id
+               AND o.is_default = true
+              LEFT JOIN LATERAL (
+                SELECT om.organization_id, om.role
+                FROM organization_members om
+                JOIN organizations mo ON mo.id = om.organization_id
+                WHERE om.user_id = u.id
+                  AND om.status = 'ACTIVE'
+                ORDER BY
+                  CASE WHEN om.role = 'OWNER' THEN 0 ELSE 1 END,
+                  mo.is_default DESC,
+                  om.created_at ASC
+                LIMIT 1
+              ) m ON true
+              LEFT JOIN organizations org
+                ON org.id = COALESCE(m.organization_id, o.id)
+              WHERE u.email = $1
+              LIMIT 1
+              `,
+              [session.user.email]
+            );
+
+            if (result.rows.length > 0) {
+              const row = result.rows[0];
+              (session.user as any).id = row.id;
+              (session.user as any).organizationId = row.organization_id;
+              (session.user as any).role = row.role;
+              (session.user as any).planCode = row.plan_code;
+            }
+          } catch (err) {
+            // Keep the JWT-derived values if the refresh lookup fails.
+            console.error("Session organization refresh failed:", err);
+          }
+        }
       }
 
       return session;
