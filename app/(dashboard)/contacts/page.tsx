@@ -16,20 +16,49 @@ export default function ContactsPage(){
   const [contacts,setContacts]=useState<Contact[]>([]), [tags,setTags]=useState<Tag[]>([]), [search,setSearch]=useState(""), [tag,setTag]=useState(""), [page,setPage]=useState(1), [totalPages,setTotalPages]=useState(1), [total,setTotal]=useState(0), [loading,setLoading]=useState(true), [selected,setSelected]=useState<string[]>([]), [modal,setModal]=useState<"add"|"edit"|null>(null), [editing,setEditing]=useState<Contact|null>(null), [form,setForm]=useState(emptyForm), [saving,setSaving]=useState(false), [uploadOpen,setUploadOpen]=useState(false), [uploadTag,setUploadTag]=useState(""), [uploadFile,setUploadFile]=useState<File|null>(null), [uploading,setUploading]=useState(false);
   const fileRef=useRef<HTMLInputElement>(null);
 
-  async function load(){
-    setLoading(true); try{ const r=await fetch(`/api/contacts?page=${page}&pageSize=25&search=${encodeURIComponent(search)}&tag=${encodeURIComponent(tag)}`); const j=await r.json(); if(j.success){setContacts(j.contacts);setTotal(j.total);setTotalPages(j.totalPages)}} finally{setLoading(false)}
+  async function load(overrides?: {page?: number; search?: string; tag?: string}){
+    const requestedPage=overrides?.page ?? page;
+    const requestedSearch=overrides?.search ?? search;
+    const requestedTag=overrides?.tag ?? tag;
+    setLoading(true);
+    try{
+      const r=await fetch(`/api/contacts?page=${requestedPage}&pageSize=25&search=${encodeURIComponent(requestedSearch)}&tag=${encodeURIComponent(requestedTag)}`,{cache:"no-store"});
+      const j=await r.json();
+      if(j.success){setContacts(j.contacts);setTotal(j.total);setTotalPages(j.totalPages)}
+    } finally{setLoading(false)}
   }
-  async function loadTags(){ const r=await fetch("/api/contacts/tags"); const j=await r.json(); if(j.success)setTags(j.audiences||[]); }
+  async function loadTags(){ const r=await fetch("/api/contacts/tags",{cache:"no-store"}); const j=await r.json(); if(j.success)setTags(j.audiences||[]); }
   useEffect(()=>{load()},[page,tag]);
-  useEffect(()=>{const t=setTimeout(()=>{setPage(1);load()},250); return()=>clearTimeout(t)},[search]);
+  useEffect(()=>{const t=setTimeout(()=>{setPage(1);load({page:1})},250); return()=>clearTimeout(t)},[search]);
   useEffect(()=>{loadTags()},[]);
 
   function openAdd(){setEditing(null);setForm(emptyForm);setModal("add")}
   function openEdit(c:Contact){setEditing(c);setForm({name:c.name||"",phone:c.phone,email:c.email||"",tag:c.tag||"",customFields:Object.entries(c.customFields||{}).map(([k,v])=>`${k}=${v}`).join("\n")});setModal("edit")}
   function parseCustom(s:string){const out:Record<string,string>={}; s.split(/\n/).forEach(line=>{const i=line.indexOf("=");if(i>0)out[line.slice(0,i).trim()]=line.slice(i+1).trim()});return out}
-  async function save(){ if(!form.phone.trim())return alert("Phone number is required."); setSaving(true); try{const payload={name:form.name,phone:form.phone,email:form.email,tag:form.tag||null,customFields:parseCustom(form.customFields)}; const r=await fetch(modal==="edit"?`/api/contacts/${editing!.id}`:"/api/contacts",{method:modal==="edit"?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const j=await r.json();if(!j.success)throw new Error(j.message);setModal(null);await Promise.all([load(),loadTags()])}catch(e:any){alert(e.message)}finally{setSaving(false)} }
+  async function save(){
+    if(!form.phone.trim())return alert("Phone number is required.");
+    setSaving(true);
+    try{
+      const payload={name:form.name,phone:form.phone,email:form.email,tag:form.tag||null,customFields:parseCustom(form.customFields)};
+      const r=await fetch(modal==="edit"?`/api/contacts/${editing!.id}`:"/api/contacts",{method:modal==="edit"?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const j=await r.json();
+      if(!j.success)throw new Error(j.message);
+      setModal(null);
+      setSelected([]);
+      // After creating a contact, return to the unfiltered first page so the
+      // complete contact list is visible immediately, without requiring refresh.
+      if(modal==="add"){
+        setSearch("");
+        setTag("");
+        setPage(1);
+        await Promise.all([load({page:1,search:"",tag:""}),loadTags()]);
+      } else {
+        await Promise.all([load(),loadTags()]);
+      }
+    }catch(e:any){alert(e.message)}finally{setSaving(false)}
+  }
   async function remove(ids:string[]){if(!ids.length||!confirm(`Delete ${ids.length} contact${ids.length>1?"s":""}?`))return;const r=await fetch("/api/contacts",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});const j=await r.json();if(!j.success)return alert(j.message);setSelected([]);await Promise.all([load(),loadTags()])}
-  async function upload(){if(!uploadFile||!uploadTag.trim())return alert("Choose a CSV and audience/tag.");setUploading(true);try{const fd=new FormData();fd.append("file",uploadFile);fd.append("tag",uploadTag.trim());const r=await fetch("/api/contacts/upload",{method:"POST",body:fd});const j=await r.json();if(!j.success)throw new Error(j.message);alert(`Imported ${j.inserted} of ${j.parsed} contacts.`);setUploadOpen(false);setUploadFile(null);setUploadTag("");if(fileRef.current)fileRef.current.value="";setPage(1);await Promise.all([load(),loadTags()])}catch(e:any){alert(e.message)}finally{setUploading(false)}}
+  async function upload(){if(!uploadFile||!uploadTag.trim())return alert("Choose a CSV and audience/tag.");setUploading(true);try{const fd=new FormData();fd.append("file",uploadFile);fd.append("tag",uploadTag.trim());const r=await fetch("/api/contacts/upload",{method:"POST",body:fd});const j=await r.json();if(!j.success)throw new Error(j.message);alert(`Imported ${j.inserted} of ${j.parsed} contacts.`);setUploadOpen(false);setUploadFile(null);setUploadTag("");if(fileRef.current)fileRef.current.value="";setSearch("");setTag("");setPage(1);await Promise.all([load({page:1,search:"",tag:""}),loadTags()])}catch(e:any){alert(e.message)}finally{setUploading(false)}}
 
   const allSelected=contacts.length>0&&contacts.every(c=>selected.includes(c.id));
   return <div>
@@ -41,8 +70,8 @@ export default function ContactsPage(){
         {selected.length>0&&<button onClick={()=>remove(selected)} className="px-3 py-2 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2"><Trash2 className="size-4"/> Delete ({selected.length})</button>}
         <button className="p-2 rounded-xl border border-border hover:bg-muted" title="Filter"><Filter className="size-4"/></button>
       </div>
-      <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-muted/40"><tr>{["","Name","Phone","Email","Segment","Source","Added",""].map((h,i)=><th key={i} className={`px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground ${i===7?"text-right":""}`}>{i===0?<input type="checkbox" checked={allSelected} onChange={e=>setSelected(e.target.checked?contacts.map(c=>c.id):[])}/>:h}</th>)}</tr></thead><tbody className="divide-y divide-border">
-        {loading?[1,2,3,4].map(i=><tr key={i}>{Array.from({length:8}).map((_,j)=><td key={j} className="px-5 py-4"><span className="block h-4 w-20 animate-pulse rounded bg-muted"/></td>)}</tr>):contacts.length===0?<tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-muted-foreground"><Users className="mx-auto mb-2 size-7 opacity-40"/>No contacts found.</td></tr>:contacts.map(c=><tr key={c.id} className="hover:bg-muted/30"><td className="px-5 py-4"><input type="checkbox" checked={selected.includes(c.id)} onChange={e=>setSelected(s=>e.target.checked?[...s,c.id]:s.filter(x=>x!==c.id))}/></td><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="size-8 rounded-full gradient-brand grid place-items-center text-white text-[10px] font-semibold">{initials(c.name)}</div><span className="text-sm font-medium whitespace-nowrap">{c.name||"Unnamed"}</span></div></td><td className="px-5 py-4 text-sm font-mono text-muted-foreground">{c.phone}</td><td className="px-5 py-4 text-sm text-muted-foreground">{c.email||"—"}</td><td className="px-5 py-4">{c.tag?<span className={`px-2 py-1 rounded-full text-[10px] font-bold ${tagClass(c.tag)}`}>{c.tag}</span>:"—"}</td><td className="px-5 py-4 text-xs text-muted-foreground">{c.source||"—"}</td><td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString("en-IN")}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-1"><button onClick={()=>openEdit(c)} className="p-2 rounded-lg hover:bg-muted"><Pencil className="size-4"/></button><button onClick={()=>remove([c.id])} className="p-2 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="size-4"/></button></div></td></tr>)}
+      <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-muted/40"><tr>{["","Name","Phone","Email","Segment","Source","Added",""] .map((h,i)=><th key={i} className={`px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground ${i===7?"text-right":""}`}>{i===0?<input type="checkbox" checked={allSelected} onChange={e=>setSelected(e.target.checked?contacts.map(c=>c.id):[])}/>:h}</th>)}</tr></thead><tbody className="divide-y divide-border">
+        {loading?[1,2,3,4].map(i=><tr key={i}>{Array.from({length:8}).map((_,j)=><td key={j} className="px-5 py-4"><span className="block h-4 w-20 animate-pulse rounded bg-muted"/></td></tr>):contacts.length===0?<tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-muted-foreground"><Users className="mx-auto mb-2 size-7 opacity-40"/>No contacts found.</td></tr>:contacts.map(c=><tr key={c.id} className="hover:bg-muted/30"><td className="px-5 py-4"><input type="checkbox" checked={selected.includes(c.id)} onChange={e=>setSelected(s=>e.target.checked?[...s,c.id]:s.filter(x=>x!==c.id))}/></td><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="size-8 rounded-full gradient-brand grid place-items-center text-white text-[10px] font-semibold">{initials(c.name)}</div><span className="text-sm font-medium whitespace-nowrap">{c.name||"Unnamed"}</span></div></td><td className="px-5 py-4 text-sm font-mono text-muted-foreground">{c.phone}</td><td className="px-5 py-4 text-sm text-muted-foreground">{c.email||"—"}</td><td className="px-5 py-4">{c.tag?<span className={`px-2 py-1 rounded-full text-[10px] font-bold ${tagClass(c.tag)}`}>{c.tag}</span>:"—"}</td><td className="px-5 py-4 text-xs text-muted-foreground">{c.source||"—"}</td><td className="px-5 py-4 text-xs text-muted-foreground whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString("en-IN")}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-1"><button onClick={()=>openEdit(c)} className="p-2 rounded-lg hover:bg-muted"><Pencil className="size-4"/></button><button onClick={()=>remove([c.id])} className="p-2 rounded-lg text-red-500 hover:bg-red-50"><Trash2 className="size-4"/></button></div></td></tr>)}
       </tbody></table></div>
       <div className="px-5 py-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground"><span>{total} contacts</span><div className="flex items-center gap-2"><button disabled={page<=1} onClick={()=>setPage(p=>p-1)} className="p-2 rounded-lg border border-border disabled:opacity-40"><ChevronLeft className="size-4"/></button><span>Page {page} of {totalPages}</span><button disabled={page>=totalPages} onClick={()=>setPage(p=>p+1)} className="p-2 rounded-lg border border-border disabled:opacity-40"><ChevronRight className="size-4"/></button></div></div>
     </div>
