@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth/session-context";
-import { getConnectionByOrganization } from "@/lib/api/whatsapp/service";
+import { getConnectionForUser } from "@/lib/api/whatsapp/repository";
 
 export async function GET() {
   try {
     const context = await getSessionContext();
-
     if (!context) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
-    const account = await getConnectionByOrganization(context.organizationId);
-
+    const account = await getConnectionForUser(context.organizationId, context.userId);
     if (!account) {
       return NextResponse.json({ success: true, connection: null });
     }
