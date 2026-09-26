@@ -1,61 +1,21 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-
-import { authOptions } from "@/lib/auth";
+import { getSessionContext } from "@/lib/auth/session-context";
 import { loadTemplates } from "@/lib/api/templates/service";
 
 export async function GET() {
-
-    try {
-
-        const session =
-            await getServerSession(authOptions);
-
-        if (!session?.user) {
-
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: "Unauthorized",
-                },
-                {
-                    status: 401,
-                }
-            );
-
-        }
-
-        const organizationId =
-            (session.user as any).organizationId;
-
-        const templates =
-            await loadTemplates(
-                organizationId
-            );
-
-        return NextResponse.json({
-
-            success: true,
-
-            templates,
-
-        });
-
-    } catch (error: any) {
-
-        console.error(error);
-
-        return NextResponse.json(
-            {
-                success: false,
-                templates: [],
-                message: error.message,
-            },
-            {
-                status: 500,
-            }
-        );
-
+  try {
+    const context = await getSessionContext();
+    if (!context) {
+      return NextResponse.json({ success: false, templates: [], message: "Unauthorized" }, { status: 401 });
     }
 
+    const templates = await loadTemplates(context.organizationId);
+    return NextResponse.json({ success: true, templates });
+  } catch (error: any) {
+    console.error("Get template status error:", error);
+    return NextResponse.json(
+      { success: false, templates: [], message: error.message || "Failed to load templates." },
+      { status: 500 }
+    );
+  }
 }
