@@ -1,68 +1,25 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-
-import { authOptions } from "@/lib/auth";
+import { getSessionContext } from "@/lib/auth/session-context";
 import { syncTemplates } from "@/lib/api/templates/sync";
 
 export async function POST() {
-
-    try {
-
-        const session =
-            await getServerSession(authOptions);
-
-        if (!session?.user) {
-
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: "Unauthorized",
-                },
-                {
-                    status: 401,
-                }
-            );
-
-        }
-
-        const organizationId =
-            (session.user as any).organizationId;
-
-        const result =
-            await syncTemplates(
-                organizationId
-            );
-
-        return NextResponse.json({
-
-            success: true,
-
-            changed:
-                result.changed,
-
-            syncedAt:
-                new Date().toISOString(),
-
-        });
-
-    } catch (error: any) {
-
-        console.error(error);
-
-        return NextResponse.json(
-            {
-                success: false,
-
-                changed: false,
-
-                message:
-                    error.message,
-            },
-            {
-                status: 500,
-            }
-        );
-
+  try {
+    const context = await getSessionContext();
+    if (!context) {
+      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
     }
 
+    const result = await syncTemplates(context.organizationId);
+    return NextResponse.json({
+      success: true,
+      changed: result.changed,
+      syncedAt: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Template sync error:", error);
+    return NextResponse.json(
+      { success: false, changed: false, message: error.message || "Failed to sync templates." },
+      { status: 500 }
+    );
+  }
 }
