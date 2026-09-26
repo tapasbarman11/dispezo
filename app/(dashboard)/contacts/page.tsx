@@ -13,23 +13,36 @@ function initials(name:string|null){ return (name||"?").split(/\s+/).filter(Bool
 function tagClass(tag:string|null){ if(!tag) return "bg-muted text-muted-foreground"; const palette=["bg-emerald-50 text-emerald-700","bg-violet-50 text-violet-700","bg-blue-50 text-blue-700","bg-amber-50 text-amber-700","bg-pink-50 text-pink-700"]; let n=0; for(const c of tag) n+=c.charCodeAt(0); return palette[n%palette.length]; }
 
 export default function ContactsPage(){
-  const [contacts,setContacts]=useState<Contact[]>([]), [tags,setTags]=useState<Tag[]>([]), [search,setSearch]=useState(""), [tag,setTag]=useState(""), [page,setPage]=useState(1), [totalPages,setTotalPages]=useState(1), [total,setTotal]=useState(0), [loading,setLoading]=useState(true), [selected,setSelected]=useState<string[]>([]), [modal,setModal]=useState<"add"|"edit"|null>(null), [editing,setEditing]=useState<Contact|null>(null), [form,setForm]=useState(emptyForm), [saving,setSaving]=useState(false), [uploadOpen,setUploadOpen]=useState(false), [uploadTag,setUploadTag]=useState(""), [uploadFile,setUploadFile]=useState<File|null>(null), [uploading,setUploading]=useState(false);
+  const [contacts,setContacts]=useState<Contact[]>([]), [tags,setTags]=useState<Tag[]>([]), [search,setSearch]=useState(""), [tag,setTag]=useState(""), [page,setPage]=useState(1), [totalPages,setTotalPages]=useState(1), [total,setTotal]=useState(0), [loading,setLoading]=useState(true), [selected,setSelected]=useState<string[]>([]), [modal,setModal]=useState<"add"|"edit"|null>(null), [editing,setEditing]=useState<Contact|null>(null), [form,setForm]=useState(emptyForm), [saving,setSaving]=useState(false), [uploadOpen,setUploadOpen]=useState(false), [uploadTag,setUploadTag]=useState(""), [uploadFile,setUploadFile]=useState<File|null>(null), [uploading,setUploading]=useState(false), [reloadKey,setReloadKey]=useState(0);
   const fileRef=useRef<HTMLInputElement>(null);
 
-  async function load(overrides?: {page?: number; search?: string; tag?: string}){
+  async function load(overrides?: {page?: number; search?: string; tag?: string}, signal?: AbortSignal){
     const requestedPage=overrides?.page ?? page;
     const requestedSearch=overrides?.search ?? search;
     const requestedTag=overrides?.tag ?? tag;
     setLoading(true);
     try{
-      const r=await fetch(`/api/contacts?page=${requestedPage}&pageSize=25&search=${encodeURIComponent(requestedSearch)}&tag=${encodeURIComponent(requestedTag)}`,{cache:"no-store"});
+      const r=await fetch(`/api/contacts?page=${requestedPage}&pageSize=25&search=${encodeURIComponent(requestedSearch)}&tag=${encodeURIComponent(requestedTag)}`,{cache:"no-store",signal});
       const j=await r.json();
-      if(j.success){setContacts(j.contacts);setTotal(j.total);setTotalPages(j.totalPages)}
-    } finally{setLoading(false)}
+      if(j.success && !signal?.aborted){setContacts(j.contacts);setTotal(j.total);setTotalPages(j.totalPages)}
+    }catch(e:any){
+      if(e?.name!=="AbortError") console.error("Contacts load failed",e);
+    }finally{
+      if(!signal?.aborted)setLoading(false);
+    }
   }
   async function loadTags(){ const r=await fetch("/api/contacts/tags",{cache:"no-store"}); const j=await r.json(); if(j.success)setTags(j.audiences||[]); }
-  useEffect(()=>{load()},[page,tag]);
-  useEffect(()=>{const t=setTimeout(()=>{setPage(1);load({page:1})},250); return()=>clearTimeout(t)},[search]);
+
+  // Keep one source of truth for contact-list fetching. The previous implementation
+  // could have an old debounced search request finish after the post-create refresh,
+  // putting the list back into the old filtered state until the page was refreshed.
+  useEffect(()=>{
+    const controller=new AbortController();
+    const delay=search.trim()?250:0;
+    const timer=setTimeout(()=>{void load(undefined,controller.signal)},delay);
+    return()=>{controller.abort();clearTimeout(timer)};
+  },[page,search,tag,reloadKey]);
+
   useEffect(()=>{loadTags()},[]);
 
   function openAdd(){setEditing(null);setForm(emptyForm);setModal("add")}
@@ -45,20 +58,20 @@ export default function ContactsPage(){
       if(!j.success)throw new Error(j.message);
       setModal(null);
       setSelected([]);
-      // After creating a contact, return to the unfiltered first page so the
-      // complete contact list is visible immediately, without requiring refresh.
       if(modal==="add"){
         setSearch("");
         setTag("");
         setPage(1);
-        await Promise.all([load({page:1,search:"",tag:""}),loadTags()]);
+        setReloadKey(k=>k+1);
+        await loadTags();
       } else {
-        await Promise.all([load(),loadTags()]);
+        setReloadKey(k=>k+1);
+        await loadTags();
       }
     }catch(e:any){alert(e.message)}finally{setSaving(false)}
   }
-  async function remove(ids:string[]){if(!ids.length||!confirm(`Delete ${ids.length} contact${ids.length>1?"s":""}?`))return;const r=await fetch("/api/contacts",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});const j=await r.json();if(!j.success)return alert(j.message);setSelected([]);await Promise.all([load(),loadTags()])}
-  async function upload(){if(!uploadFile||!uploadTag.trim())return alert("Choose a CSV and audience/tag.");setUploading(true);try{const fd=new FormData();fd.append("file",uploadFile);fd.append("tag",uploadTag.trim());const r=await fetch("/api/contacts/upload",{method:"POST",body:fd});const j=await r.json();if(!j.success)throw new Error(j.message);alert(`Imported ${j.inserted} of ${j.parsed} contacts.`);setUploadOpen(false);setUploadFile(null);setUploadTag("");if(fileRef.current)fileRef.current.value="";setSearch("");setTag("");setPage(1);await Promise.all([load({page:1,search:"",tag:""}),loadTags()])}catch(e:any){alert(e.message)}finally{setUploading(false)}}
+  async function remove(ids:string[]){if(!ids.length||!confirm(`Delete ${ids.length} contact${ids.length>1?"s":""}?`))return;const r=await fetch("/api/contacts",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});const j=await r.json();if(!j.success)return alert(j.message);setSelected([]);setReloadKey(k=>k+1);await loadTags()}
+  async function upload(){if(!uploadFile||!uploadTag.trim())return alert("Choose a CSV and audience/tag.");setUploading(true);try{const fd=new FormData();fd.append("file",uploadFile);fd.append("tag",uploadTag.trim());const r=await fetch("/api/contacts/upload",{method:"POST",body:fd});const j=await r.json();if(!j.success)throw new Error(j.message);alert(`Imported ${j.inserted} of ${j.parsed} contacts.`);setUploadOpen(false);setUploadFile(null);setUploadTag("");if(fileRef.current)fileRef.current.value="";setSearch("");setTag("");setPage(1);setReloadKey(k=>k+1);await loadTags()}catch(e:any){alert(e.message)}finally{setUploading(false)}}
 
   const allSelected=contacts.length>0&&contacts.every(c=>selected.includes(c.id));
   return <div>
