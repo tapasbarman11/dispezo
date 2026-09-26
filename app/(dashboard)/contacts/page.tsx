@@ -85,7 +85,7 @@ export default function ContactsPage(){
       </div>
       <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-muted/40"><tr>{["","Name","Phone","Email","Segment","Source","Added",""] .map((h,i)=><th key={i} className={`px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground ${i===7?"text-right":""}`}>{i===0?<input type="checkbox" checked={allSelected} onChange={e=>setSelected(e.target.checked?contacts.map(c=>c.id):[])}/>:h}</th>)}</tr></thead><tbody className="divide-y divide-border">
         {loading ? (
-          [1,2,3,4].map(i=><tr key={i}>{Array.from({length:8}).map((_,j)=><td key={j} className="px-5 py-4"><span className="block h-4 w-20 animate-pulse rounded bg-muted"/></td></tr>))
+          [1,2,3,4].map(i=><tr key={i}>{Array.from({length:8}).map((_,j)=><td key={j} className="px-5 py-4"><span className="block h-4 w-20 animate-pulse rounded bg-muted"/></td>)}</tr>)
         ) : contacts.length === 0 ? (
           <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-muted-foreground"><Users className="mx-auto mb-2 size-7 opacity-40"/>No contacts found.</td></tr>
         ) : (
