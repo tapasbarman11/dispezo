@@ -74,7 +74,8 @@ export default function ContactsPage(){
   async function upload(){if(!uploadFile||!uploadTag.trim())return alert("Choose a CSV and audience/tag.");setUploading(true);try{const fd=new FormData();fd.append("file",uploadFile);fd.append("tag",uploadTag.trim());const r=await fetch("/api/contacts/upload",{method:"POST",body:fd});const j=await r.json();if(!j.success)throw new Error(j.message);alert(`Imported ${j.inserted} of ${j.parsed} contacts.`);setUploadOpen(false);setUploadFile(null);setUploadTag("");if(fileRef.current)fileRef.current.value="";setSearch("");setTag("");setPage(1);setReloadKey(k=>k+1);await loadTags()}catch(e:any){alert(e.message)}finally{setUploading(false)}}
 
   const allSelected=contacts.length>0&&contacts.every(c=>selected.includes(c.id));
-  return <div>
+  return <div className="relative">
+    {loading && <div className="absolute left-0 right-0 top-0 z-20 h-0.5 overflow-hidden bg-brand-blue/10"><div className="h-full w-1/3 animate-[loading-progress_1.2s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-pink-500 via-fuchsia-500 to-violet-600" /></div>}
     <PageHeader eyebrow="Directory" title="Contacts" description="Manage your customers, segments and CSV data for WhatsApp broadcasts." actions={<><button onClick={()=>setUploadOpen(true)} className="px-4 py-2 rounded-xl border border-border bg-background text-sm font-medium flex items-center gap-2 hover:bg-muted"><Upload className="size-4"/> Import CSV</button><button onClick={openAdd} className="px-4 py-2 rounded-xl gradient-brand text-white text-sm font-semibold flex items-center gap-2 shadow-[var(--shadow-glow)]"><Plus className="size-4"/> Add Contact</button></>}/>
     <div className="glass rounded-2xl shadow-[var(--shadow-card)] overflow-hidden">
       <div className="p-4 flex flex-wrap items-center gap-3 border-b border-border">
