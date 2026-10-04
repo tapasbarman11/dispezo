@@ -83,11 +83,6 @@ export async function createCampaign(data: CreateCampaignInput): Promise<Campaig
 }
 
 function mapCampaign(row: any): Campaign {
-  // Queries in this repository use camelCase aliases while INSERT ... RETURNING
-  // gives PostgreSQL's native snake_case column names. Support both shapes so
-  // createCampaign(), getCampaign(), and listCampaigns() all return identical
-  // data. The previous mapper only read snake_case, which made the history page
-  // blank and caused the worker to see an undefined template name.
   return {
     id: row.id,
     organizationId: row.organizationId ?? row.organization_id,
@@ -107,9 +102,11 @@ function mapCampaign(row: any): Campaign {
     startedAt: row.startedAt ?? row.started_at ?? null,
     completedAt: row.completedAt ?? row.completed_at ?? null,
     executionDurationMs:
-      row.executionDurationMs ?? row.execution_duration_ms == null
-        ? null
-        : Number(row.executionDurationMs ?? row.execution_duration_ms),
+      row.executionDurationMs != null
+        ? Number(row.executionDurationMs)
+        : row.execution_duration_ms != null
+          ? Number(row.execution_duration_ms)
+          : null,
     createdAt: row.createdAt ?? row.created_at,
     lastError: row.lastError ?? row.last_error ?? null,
   };
