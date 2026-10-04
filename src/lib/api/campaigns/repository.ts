@@ -52,9 +52,6 @@ const select = `
 
 export async function createCampaign(data: CreateCampaignInput): Promise<Campaign> {
   const status: CampaignStatus = data.scheduledAt ? "SCHEDULED" : "IN_PROGRESS";
-  // Calculate the initial estimate in application code. This deliberately avoids
-  // PostgreSQL expressions involving untyped query parameters (e.g. $7 * $8),
-  // which can produce "operator is not unique: unknown * unknown" in production.
   const totalCost = Number(data.totalContacts) * Number(data.unitCost);
 
   const result = await pool.query(
@@ -86,16 +83,35 @@ export async function createCampaign(data: CreateCampaignInput): Promise<Campaig
 }
 
 function mapCampaign(row: any): Campaign {
+  // Queries in this repository use camelCase aliases while INSERT ... RETURNING
+  // gives PostgreSQL's native snake_case column names. Support both shapes so
+  // createCampaign(), getCampaign(), and listCampaigns() all return identical
+  // data. The previous mapper only read snake_case, which made the history page
+  // blank and caused the worker to see an undefined template name.
   return {
-    id: row.id, organizationId: row.organization_id, campaignName: row.campaign_name,
-    templateName: row.template_name, templateCategory: row.template_category,
-    audienceTag: row.audience_tag, status: row.status, totalContacts: Number(row.total_contacts ?? 0),
-    sentCount: Number(row.sent_count ?? 0), deliveredCount: Number(row.delivered_count ?? 0),
-    failedCount: Number(row.failed_count ?? 0), readCount: Number(row.read_count ?? 0),
-    unitCost: Number(row.unit_cost ?? 0), totalCost: Number(row.total_cost ?? 0),
-    scheduledAt: row.scheduled_at, startedAt: row.started_at, completedAt: row.completed_at,
-    executionDurationMs: row.execution_duration_ms == null ? null : Number(row.execution_duration_ms),
-    createdAt: row.created_at, lastError: row.last_error ?? null,
+    id: row.id,
+    organizationId: row.organizationId ?? row.organization_id,
+    campaignName: row.campaignName ?? row.campaign_name,
+    templateName: row.templateName ?? row.template_name,
+    templateCategory: row.templateCategory ?? row.template_category ?? null,
+    audienceTag: row.audienceTag ?? row.audience_tag ?? null,
+    status: row.status,
+    totalContacts: Number(row.totalContacts ?? row.total_contacts ?? 0),
+    sentCount: Number(row.sentCount ?? row.sent_count ?? 0),
+    deliveredCount: Number(row.deliveredCount ?? row.delivered_count ?? 0),
+    failedCount: Number(row.failedCount ?? row.failed_count ?? 0),
+    readCount: Number(row.readCount ?? row.read_count ?? 0),
+    unitCost: Number(row.unitCost ?? row.unit_cost ?? 0),
+    totalCost: Number(row.totalCost ?? row.total_cost ?? 0),
+    scheduledAt: row.scheduledAt ?? row.scheduled_at ?? null,
+    startedAt: row.startedAt ?? row.started_at ?? null,
+    completedAt: row.completedAt ?? row.completed_at ?? null,
+    executionDurationMs:
+      row.executionDurationMs ?? row.execution_duration_ms == null
+        ? null
+        : Number(row.executionDurationMs ?? row.execution_duration_ms),
+    createdAt: row.createdAt ?? row.created_at,
+    lastError: row.lastError ?? row.last_error ?? null,
   };
 }
 
