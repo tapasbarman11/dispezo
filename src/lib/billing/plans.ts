@@ -6,12 +6,13 @@ export const PLAN_LIMITS: Record<PlanCode, {
   teamMembers: number | null;
   whatsappNumbers: number;
   broadcastRecipients: number;
+  monthlyMessages: number | null;
   googleReviewAutoresponder: boolean;
 }> = {
-  FREE: { teamMembers: 2, whatsappNumbers: 1, broadcastRecipients: 500, googleReviewAutoresponder: false },
-  STARTER: { teamMembers: null, whatsappNumbers: 2, broadcastRecipients: 5_000, googleReviewAutoresponder: false },
-  GROWTH: { teamMembers: null, whatsappNumbers: 5, broadcastRecipients: 50_000, googleReviewAutoresponder: true },
-  SCALE: { teamMembers: null, whatsappNumbers: 10, broadcastRecipients: 250_000, googleReviewAutoresponder: true },
+  FREE: { teamMembers: 2, whatsappNumbers: 1, broadcastRecipients: 500, monthlyMessages: 500, googleReviewAutoresponder: false },
+  STARTER: { teamMembers: null, whatsappNumbers: 2, broadcastRecipients: 5_000, monthlyMessages: 5_000, googleReviewAutoresponder: false },
+  GROWTH: { teamMembers: null, whatsappNumbers: 5, broadcastRecipients: 50_000, monthlyMessages: 50_000, googleReviewAutoresponder: true },
+  SCALE: { teamMembers: null, whatsappNumbers: 10, broadcastRecipients: 250_000, monthlyMessages: 250_000, googleReviewAutoresponder: true },
 };
 
 export function normalizePlan(value: unknown): PlanCode {
