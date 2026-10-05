@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { getConnectionByOrganization } from "@/lib/api/whatsapp/service";
 import { metaPOST } from "@/lib/meta/client";
-import { assertCanSendMessages, recordMessagesSent } from "@/lib/billing/access";
+import { reserveMessageQuota, releaseMessageQuota } from "@/lib/billing/access";
 import pool from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -17,20 +17,26 @@ export async function POST(req: NextRequest) {
     const {phoneNumber,templateName,language="en_US",components=[]} = await req.json();
     if (!phoneNumber || !templateName) return NextResponse.json({success:false,message:"Phone number and template are required."},{status:400});
 
-    await assertCanSendMessages(organizationId, 1);
-
-    const accessToken = decrypt(account.access_token);
-    const payload:any = {messaging_product:"whatsapp",recipient_type:"individual",to:phoneNumber,type:"template",template:{name:templateName,language:{code:language}}};
-    if (Array.isArray(components) && components.length) payload.template.components=components;
-    const response = await metaPOST<any>(`/${account.phone_number_id}/messages`,accessToken,payload);
-    const messageId = response?.messages?.[0]?.id ?? null;
-    await pool.query(
-      `INSERT INTO messages (organization_id,campaign_id,phone,template_name,whatsapp_message_id,status,message_source,sent_at)
-       VALUES ($1,NULL,$2,$3,$4,$5,'DIRECT_API',NOW())`,
-      [organizationId,phoneNumber,templateName,messageId,messageId?"Sent":"Failed"]
-    );
-    if (messageId) await recordMessagesSent(organizationId, 1);
-    return NextResponse.json({success:true,messageId});
+    await reserveMessageQuota(organizationId, 1);
+    let deliveredToMeta = false;
+    try {
+      const accessToken = decrypt(account.access_token);
+      const payload:any = {messaging_product:"whatsapp",recipient_type:"individual",to:phoneNumber,type:"template",template:{name:templateName,language:{code:language}}};
+      if (Array.isArray(components) && components.length) payload.template.components=components;
+      const response = await metaPOST<any>(`/${account.phone_number_id}/messages`,accessToken,payload);
+      const messageId = response?.messages?.[0]?.id ?? null;
+      if (!messageId) throw new Error("Meta did not return a message ID.");
+      deliveredToMeta = true;
+      await pool.query(
+        `INSERT INTO messages (organization_id,campaign_id,phone,template_name,whatsapp_message_id,status,message_source,sent_at)
+         VALUES ($1,NULL,$2,$3,$4,'Sent','DIRECT_API',NOW())`,
+        [organizationId,phoneNumber,templateName,messageId]
+      );
+      return NextResponse.json({success:true,messageId});
+    } catch (error) {
+      if (!deliveredToMeta) await releaseMessageQuota(organizationId, 1);
+      throw error;
+    }
   } catch (error:any) {
     console.error("Direct WhatsApp send error",error);
     return NextResponse.json({success:false,message:error?.message||"Unable to send message."},{status:500});
