@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { decrypt } from "@/lib/crypto";
 import { getConnectionByOrganization } from "@/lib/api/whatsapp/service";
 import { metaPOST } from "@/lib/meta/client";
+import { assertCanSendMessages, recordMessagesSent } from "@/lib/billing/access";
 import pool from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -15,6 +16,9 @@ export async function POST(req: NextRequest) {
     if (!account) return NextResponse.json({success:false,message:"WhatsApp account not connected."},{status:400});
     const {phoneNumber,templateName,language="en_US",components=[]} = await req.json();
     if (!phoneNumber || !templateName) return NextResponse.json({success:false,message:"Phone number and template are required."},{status:400});
+
+    await assertCanSendMessages(organizationId, 1);
+
     const accessToken = decrypt(account.access_token);
     const payload:any = {messaging_product:"whatsapp",recipient_type:"individual",to:phoneNumber,type:"template",template:{name:templateName,language:{code:language}}};
     if (Array.isArray(components) && components.length) payload.template.components=components;
@@ -25,6 +29,7 @@ export async function POST(req: NextRequest) {
        VALUES ($1,NULL,$2,$3,$4,$5,'DIRECT_API',NOW())`,
       [organizationId,phoneNumber,templateName,messageId,messageId?"Sent":"Failed"]
     );
+    if (messageId) await recordMessagesSent(organizationId, 1);
     return NextResponse.json({success:true,messageId});
   } catch (error:any) {
     console.error("Direct WhatsApp send error",error);
