@@ -1,115 +1,16 @@
 import pool from "@/lib/db";
 import { PLAN_LIMITS, normalizePlan } from "./plans";
 
-export async function getOrganizationPlan(organizationId: string) {
-  const result = await pool.query(
-    `SELECT plan_code AS "planCode", subscription_status AS "subscriptionStatus"
-     FROM organizations WHERE id=$1 LIMIT 1`, [organizationId]
-  );
-  if (!result.rows.length) throw new Error("Organization not found.");
-  const planCode = normalizePlan(result.rows[0].planCode);
-  return { planCode, subscriptionStatus: result.rows[0].subscriptionStatus || "ACTIVE", limits: PLAN_LIMITS[planCode] };
-}
-
-export async function getOrganizationMemberRole(organizationId: string, userId: string) {
-  const result = await pool.query(`SELECT role FROM organization_members WHERE organization_id=$1 AND user_id=$2 AND status='ACTIVE' LIMIT 1`, [organizationId, userId]);
-  return result.rows[0]?.role ?? null;
-}
-
-export async function requireOrgRole(organizationId: string, userId: string, roles: Array<"OWNER" | "ADMIN" | "MEMBER">) {
-  const role = await getOrganizationMemberRole(organizationId, userId);
-  if (!role || !roles.includes(role)) throw new Error("You do not have permission to perform this action.");
-  return role;
-}
-
-export async function assertCanAddTeamMember(organizationId: string) {
-  const plan = await getOrganizationPlan(organizationId);
-  if (plan.limits.teamMembers === null) return plan;
-  const result = await pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status IN ('ACTIVE','INVITED')`, [organizationId]);
-  const current = Number(result.rows[0]?.count || 0);
-  if (current >= plan.limits.teamMembers) throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.teamMembers} team members. Upgrade your plan to add more.`);
-  return plan;
-}
-
-export async function assertCanAddWhatsAppNumber(organizationId: string, phoneNumberId?: string | null) {
-  const plan = await getOrganizationPlan(organizationId);
-  if (phoneNumberId) {
-    const existing = await pool.query(`SELECT id FROM whatsapp_accounts WHERE organization_id=$1 AND phone_number_id=$2 LIMIT 1`, [organizationId, phoneNumberId]);
-    if (existing.rows.length) return plan;
-  }
-  const result = await pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`, [organizationId]);
-  const current = Number(result.rows[0]?.count || 0);
-  if (current >= plan.limits.whatsappNumbers) throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.whatsappNumbers} WhatsApp number(s). Upgrade your plan to add another number.`);
-  return plan;
-}
-
-export async function getMonthlyMessageUsage(organizationId: string) {
-  const result = await pool.query(`SELECT messages_sent AS "messagesSent" FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE LIMIT 1`, [organizationId]);
-  return Number(result.rows[0]?.messagesSent || 0);
-}
-
-export async function assertCanSendMessages(organizationId: string, requested: number) {
-  if (!Number.isInteger(requested) || requested < 1) throw new Error("Message count must be at least 1.");
-  const plan = await getOrganizationPlan(organizationId);
-  if (plan.limits.monthlyMessages === null) return plan;
-  const usage = await getMonthlyMessageUsage(organizationId);
-  if (usage + requested > plan.limits.monthlyMessages) throw new Error(`Your ${plan.planCode} monthly message limit is ${plan.limits.monthlyMessages.toLocaleString()}. ${usage.toLocaleString()} used and ${Math.max(0, plan.limits.monthlyMessages - usage).toLocaleString()} remaining.`);
-  return plan;
-}
-
-export async function reserveMessageQuota(organizationId: string, requested: number) {
-  const plan = await getOrganizationPlan(organizationId);
-  if (plan.limits.monthlyMessages === null) return plan;
-  if (requested < 1 || requested > plan.limits.monthlyMessages) throw new Error(`Requested message count exceeds the ${plan.planCode} monthly limit.`);
-  const result = await pool.query(
-    `INSERT INTO organization_message_usage (organization_id, usage_month, messages_sent, updated_at)
-     VALUES ($1, DATE_TRUNC('month', NOW())::DATE, $2, NOW())
-     ON CONFLICT (organization_id, usage_month) DO UPDATE
-       SET messages_sent = organization_message_usage.messages_sent + EXCLUDED.messages_sent,
-           updated_at = NOW()
-       WHERE organization_message_usage.messages_sent + EXCLUDED.messages_sent <= $3
-     RETURNING messages_sent AS "messagesSent"`,
-    [organizationId, requested, plan.limits.monthlyMessages]
-  );
-  if (!result.rows.length) throw new Error(`Your ${plan.planCode} monthly message limit has been reached. Upgrade your plan to continue sending.`);
-  return plan;
-}
-
-export async function releaseMessageQuota(organizationId: string, count: number) {
-  if (count < 1) return;
-  await pool.query(`UPDATE organization_message_usage SET messages_sent=GREATEST(0, messages_sent-$2), updated_at=NOW() WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE`, [organizationId, count]);
-}
-
-export async function recordMessagesSent(organizationId: string, count = 1) {
-  if (count < 1) return;
-  await reserveMessageQuota(organizationId, count);
-}
-
-export async function assertCanCreateBroadcast(organizationId: string, recipientCount: number) {
-  if (!Number.isInteger(recipientCount) || recipientCount < 1) throw new Error("Broadcast recipient count must be at least 1.");
-  const plan = await getOrganizationPlan(organizationId);
-  if (plan.limits.broadcastRecipients === null) return plan;
-  if (recipientCount > plan.limits.broadcastRecipients) {
-    throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.broadcastRecipients.toLocaleString()} recipients per broadcast. This audience has ${recipientCount.toLocaleString()}. Upgrade your plan to continue.`);
-  }
-  return plan;
-}
-
-export async function getPlanUsage(organizationId: string) {
-  const [members, numbers, messages, contacts, broadcasts] = await Promise.all([
-    pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status='ACTIVE'`, [organizationId]),
-    pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`, [organizationId]),
-    pool.query(`SELECT messages_sent::bigint AS count FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE LIMIT 1`, [organizationId]),
-    pool.query(`SELECT COUNT(*)::int AS count FROM contacts WHERE organization_id=$1`, [organizationId]),
-    pool.query(`SELECT COUNT(*)::int AS count FROM campaigns WHERE organization_id=$1`, [organizationId]),
-  ]);
-  return {
-    teamMembers: Number(members.rows[0]?.count || 0),
-    whatsappNumbers: Number(numbers.rows[0]?.count || 0),
-    monthlyMessages: Number(messages.rows[0]?.count || 0),
-    contacts: Number(contacts.rows[0]?.count || 0),
-    broadcasts: Number(broadcasts.rows[0]?.count || 0),
-  };
-}
-
+export async function getOrganizationPlan(organizationId: string) { const result=await pool.query(`SELECT plan_code AS "planCode", subscription_status AS "subscriptionStatus" FROM organizations WHERE id=$1 LIMIT 1`,[organizationId]); if(!result.rows.length)throw new Error("Organization not found."); const planCode=normalizePlan(result.rows[0].planCode); return {planCode,subscriptionStatus:result.rows[0].subscriptionStatus||"ACTIVE",limits:PLAN_LIMITS[planCode]}; }
+export async function getOrganizationMemberRole(organizationId:string,userId:string){const result=await pool.query(`SELECT role FROM organization_members WHERE organization_id=$1 AND user_id=$2 AND status='ACTIVE' LIMIT 1`,[organizationId,userId]);return result.rows[0]?.role??null;}
+export async function requireOrgRole(organizationId:string,userId:string,roles:Array<"OWNER"|"ADMIN"|"MEMBER">){const role=await getOrganizationMemberRole(organizationId,userId);if(!role||!roles.includes(role))throw new Error("You do not have permission to perform this action.");return role;}
+export async function assertCanAddTeamMember(organizationId:string){const plan=await getOrganizationPlan(organizationId);if(plan.limits.teamMembers===null)return plan;const result=await pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status IN ('ACTIVE','INVITED')`,[organizationId]);const current=Number(result.rows[0]?.count||0);if(current>=plan.limits.teamMembers)throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.teamMembers} team members. Upgrade your plan to add more.`);return plan;}
+export async function assertCanAddWhatsAppNumber(organizationId:string,phoneNumberId?:string|null){const plan=await getOrganizationPlan(organizationId);if(phoneNumberId){const existing=await pool.query(`SELECT id FROM whatsapp_accounts WHERE organization_id=$1 AND phone_number_id=$2 LIMIT 1`,[organizationId,phoneNumberId]);if(existing.rows.length)return plan;}const result=await pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') NOT IN ('deleted','disconnected')`,[organizationId]);const current=Number(result.rows[0]?.count||0);if(current>=plan.limits.whatsappNumbers)throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.whatsappNumbers} WhatsApp number(s). Upgrade your plan to add another number.`);return plan;}
+export async function getMonthlyMessageUsage(organizationId:string){const result=await pool.query(`SELECT messages_sent AS "messagesSent" FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month',NOW())::DATE LIMIT 1`,[organizationId]);return Number(result.rows[0]?.messagesSent||0);}
+export async function assertCanSendMessages(organizationId:string,requested:number){if(!Number.isInteger(requested)||requested<1)throw new Error("Message count must be at least 1.");const plan=await getOrganizationPlan(organizationId);if(plan.limits.monthlyMessages===null)return plan;const usage=await getMonthlyMessageUsage(organizationId);if(usage+requested>plan.limits.monthlyMessages)throw new Error(`Your ${plan.planCode} monthly message limit is ${plan.limits.monthlyMessages.toLocaleString()}. ${usage.toLocaleString()} used and ${Math.max(0,plan.limits.monthlyMessages-usage).toLocaleString()} remaining.`);return plan;}
+export async function reserveMessageQuota(organizationId:string,requested:number){const plan=await getOrganizationPlan(organizationId);if(plan.limits.monthlyMessages===null)return plan;if(requested<1||requested>plan.limits.monthlyMessages)throw new Error(`Requested message count exceeds the ${plan.planCode} monthly limit.`);const result=await pool.query(`INSERT INTO organization_message_usage (organization_id,usage_month,messages_sent,updated_at) VALUES ($1,DATE_TRUNC('month',NOW())::DATE,$2,NOW()) ON CONFLICT (organization_id,usage_month) DO UPDATE SET messages_sent=organization_message_usage.messages_sent+EXCLUDED.messages_sent,updated_at=NOW() WHERE organization_message_usage.messages_sent+EXCLUDED.messages_sent<=$3 RETURNING messages_sent AS "messagesSent"`,[organizationId,requested,plan.limits.monthlyMessages]);if(!result.rows.length)throw new Error(`Your ${plan.planCode} monthly message limit has been reached. Upgrade your plan to continue sending.`);return plan;}
+export async function releaseMessageQuota(organizationId:string,count:number){if(count<1)return;await pool.query(`UPDATE organization_message_usage SET messages_sent=GREATEST(0,messages_sent-$2),updated_at=NOW() WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month',NOW())::DATE`,[organizationId,count]);}
+export async function recordMessagesSent(organizationId:string,count=1){if(count<1)return;await reserveMessageQuota(organizationId,count);}
+export async function assertCanCreateBroadcast(organizationId:string,recipientCount:number){if(!Number.isInteger(recipientCount)||recipientCount<1)throw new Error("Broadcast recipient count must be at least 1.");const plan=await getOrganizationPlan(organizationId);if(plan.limits.broadcastRecipients===null)return plan;if(recipientCount>plan.limits.broadcastRecipients)throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.broadcastRecipients.toLocaleString()} recipients per broadcast. This audience has ${recipientCount.toLocaleString()}. Upgrade your plan to continue.`);return plan;}
+export async function getPlanUsage(organizationId:string){const [members,numbers,messages,contacts,broadcasts]=await Promise.all([pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status='ACTIVE'`,[organizationId]),pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') NOT IN ('deleted','disconnected')`,[organizationId]),pool.query(`SELECT messages_sent::bigint AS count FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month',NOW())::DATE LIMIT 1`,[organizationId]),pool.query(`SELECT COUNT(*)::int AS count FROM contacts WHERE organization_id=$1`,[organizationId]),pool.query(`SELECT COUNT(*)::int AS count FROM campaigns WHERE organization_id=$1`,[organizationId])]);return {teamMembers:Number(members.rows[0]?.count||0),whatsappNumbers:Number(numbers.rows[0]?.count||0),monthlyMessages:Number(messages.rows[0]?.count||0),contacts:Number(contacts.rows[0]?.count||0),broadcasts:Number(broadcasts.rows[0]?.count||0)};}
 export { PLAN_LIMITS };
