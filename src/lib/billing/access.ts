@@ -85,13 +85,31 @@ export async function recordMessagesSent(organizationId: string, count = 1) {
   await reserveMessageQuota(organizationId, count);
 }
 
+export async function assertCanCreateBroadcast(organizationId: string, recipientCount: number) {
+  if (!Number.isInteger(recipientCount) || recipientCount < 1) throw new Error("Broadcast recipient count must be at least 1.");
+  const plan = await getOrganizationPlan(organizationId);
+  if (plan.limits.broadcastRecipients === null) return plan;
+  if (recipientCount > plan.limits.broadcastRecipients) {
+    throw new Error(`Your ${plan.planCode} plan allows ${plan.limits.broadcastRecipients.toLocaleString()} recipients per broadcast. This audience has ${recipientCount.toLocaleString()}. Upgrade your plan to continue.`);
+  }
+  return plan;
+}
+
 export async function getPlanUsage(organizationId: string) {
-  const [members, numbers, messages] = await Promise.all([
+  const [members, numbers, messages, contacts, broadcasts] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status='ACTIVE'`, [organizationId]),
     pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`, [organizationId]),
     pool.query(`SELECT messages_sent::bigint AS count FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE LIMIT 1`, [organizationId]),
+    pool.query(`SELECT COUNT(*)::int AS count FROM contacts WHERE organization_id=$1`, [organizationId]),
+    pool.query(`SELECT COUNT(*)::int AS count FROM campaigns WHERE organization_id=$1`, [organizationId]),
   ]);
-  return { teamMembers: Number(members.rows[0]?.count || 0), whatsappNumbers: Number(numbers.rows[0]?.count || 0), monthlyMessages: Number(messages.rows[0]?.count || 0) };
+  return {
+    teamMembers: Number(members.rows[0]?.count || 0),
+    whatsappNumbers: Number(numbers.rows[0]?.count || 0),
+    monthlyMessages: Number(messages.rows[0]?.count || 0),
+    contacts: Number(contacts.rows[0]?.count || 0),
+    broadcasts: Number(broadcasts.rows[0]?.count || 0),
+  };
 }
 
 export { PLAN_LIMITS };
