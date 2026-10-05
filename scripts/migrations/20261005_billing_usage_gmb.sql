@@ -1,9 +1,16 @@
--- Dispezo monthly message usage + Google Business Profile connection support.
+-- Dispezo monthly message usage + Google Business Profile connection + cached Meta billing status.
 -- Run once against the existing PostgreSQL database.
 
 ALTER TABLE organizations
   ADD COLUMN IF NOT EXISTS plan_code TEXT NOT NULL DEFAULT 'FREE',
   ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'ACTIVE';
+
+ALTER TABLE whatsapp_accounts
+  ADD COLUMN IF NOT EXISTS meta_billing_balance NUMERIC(18,4),
+  ADD COLUMN IF NOT EXISTS meta_billing_credit_available NUMERIC(18,4),
+  ADD COLUMN IF NOT EXISTS meta_billing_currency TEXT DEFAULT 'INR',
+  ADD COLUMN IF NOT EXISTS meta_billing_credit_line_id TEXT,
+  ADD COLUMN IF NOT EXISTS meta_billing_last_synced_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS organization_message_usage (
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -16,8 +23,6 @@ CREATE TABLE IF NOT EXISTS organization_message_usage (
 CREATE INDEX IF NOT EXISTS organization_message_usage_month_idx
   ON organization_message_usage(usage_month, organization_id);
 
--- Backfill the current month's successful WhatsApp submissions so the new
--- quota starts from the real usage already present in the database.
 WITH current_usage AS (
   SELECT organization_id, COUNT(*)::BIGINT AS messages_sent
   FROM messages
@@ -42,7 +47,6 @@ ON CONFLICT (organization_id, usage_month) DO UPDATE
 SET messages_sent = EXCLUDED.messages_sent,
     updated_at = NOW();
 
--- Google Business Profile tables used by the existing GMB connection page/API.
 CREATE TABLE IF NOT EXISTS google_business_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
