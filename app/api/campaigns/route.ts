@@ -5,6 +5,7 @@ import { createCampaign, listCampaigns } from "@/lib/api/campaigns/repository";
 import { getContactsByTag } from "@/lib/api/contacts/repository";
 import { getTemplateByName } from "@/lib/api/campaigns/template";
 import { getMetaRate } from "@/lib/meta/pricing";
+import { assertCanCreateBroadcast } from "@/lib/billing/access";
 
 async function organizationId() {
   const session = await getServerSession(authOptions);
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
 
     const contacts = await getContactsByTag(org, audienceTag);
     if (!contacts.length) return NextResponse.json({success:false,message:`No contacts found under audience "${audienceTag}".`},{status:400});
+    await assertCanCreateBroadcast(org, contacts.length);
 
     const parsedSchedule = scheduledAt ? new Date(scheduledAt) : null;
     if (parsedSchedule && Number.isNaN(parsedSchedule.getTime())) return NextResponse.json({success:false,message:"Invalid scheduled date/time."},{status:400});
@@ -61,9 +63,6 @@ export async function POST(req: NextRequest) {
       scheduledAt:parsedSchedule,
     });
 
-    // Both Send Now and Scheduled campaigns are executed by the Dispezo
-    // campaign worker. Send Now is persisted as IN_PROGRESS and picked up
-    // on the next worker tick; Scheduled is persisted as SCHEDULED.
     return NextResponse.json({
       success:true,
       campaign:{
