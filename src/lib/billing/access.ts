@@ -1,6 +1,10 @@
 import pool from "@/lib/db";
 import { PLAN_LIMITS, normalizePlan } from "./plans";
 
+function currentUsageMonth() {
+  return new Date().toISOString().slice(0, 7) + "-01";
+}
+
 export async function getOrganizationPlan(organizationId: string) {
   const result = await pool.query(
     `SELECT plan_code AS "planCode", subscription_status AS "subscriptionStatus"
@@ -38,11 +42,9 @@ export async function requireOrgRole(
 export async function assertCanAddTeamMember(organizationId: string) {
   const plan = await getOrganizationPlan(organizationId);
   if (plan.limits.teamMembers === null) return plan;
-
   const result = await pool.query(
     `SELECT COUNT(*)::int AS count FROM organization_members
-     WHERE organization_id=$1 AND status IN ('ACTIVE','INVITED')`,
-    [organizationId]
+     WHERE organization_id=$1 AND status IN ('ACTIVE','INVITED')`, [organizationId]
   );
   const current = Number(result.rows[0]?.count || 0);
   if (current >= plan.limits.teamMembers) {
@@ -53,20 +55,16 @@ export async function assertCanAddTeamMember(organizationId: string) {
 
 export async function assertCanAddWhatsAppNumber(organizationId: string, phoneNumberId?: string | null) {
   const plan = await getOrganizationPlan(organizationId);
-
   if (phoneNumberId) {
     const existing = await pool.query(
-      `SELECT id FROM whatsapp_accounts
-       WHERE organization_id=$1 AND phone_number_id=$2 LIMIT 1`,
+      `SELECT id FROM whatsapp_accounts WHERE organization_id=$1 AND phone_number_id=$2 LIMIT 1`,
       [organizationId, phoneNumberId]
     );
     if (existing.rows.length) return plan;
   }
-
   const result = await pool.query(
     `SELECT COUNT(*)::int AS count FROM whatsapp_accounts
-     WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`,
-    [organizationId]
+     WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`, [organizationId]
   );
   const current = Number(result.rows[0]?.count || 0);
   if (current >= plan.limits.whatsappNumbers) {
@@ -75,14 +73,48 @@ export async function assertCanAddWhatsAppNumber(organizationId: string, phoneNu
   return plan;
 }
 
+export async function getMonthlyMessageUsage(organizationId: string) {
+  const result = await pool.query(
+    `SELECT messages_sent AS "messagesSent"
+     FROM organization_message_usage
+     WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE
+     LIMIT 1`, [organizationId]
+  );
+  return Number(result.rows[0]?.messagesSent || 0);
+}
+
+export async function assertCanSendMessages(organizationId: string, requested: number) {
+  if (!Number.isInteger(requested) || requested < 1) throw new Error("Message count must be at least 1.");
+  const plan = await getOrganizationPlan(organizationId);
+  if (plan.limits.monthlyMessages === null) return plan;
+  const usage = await getMonthlyMessageUsage(organizationId);
+  if (usage + requested > plan.limits.monthlyMessages) {
+    throw new Error(`Your ${plan.planCode} monthly message limit is ${plan.limits.monthlyMessages.toLocaleString()}. ${usage.toLocaleString()} used and ${Math.max(0, plan.limits.monthlyMessages - usage).toLocaleString()} remaining.`);
+  }
+  return plan;
+}
+
+export async function recordMessagesSent(organizationId: string, count = 1) {
+  if (count < 1) return;
+  await pool.query(
+    `INSERT INTO organization_message_usage (organization_id, usage_month, messages_sent, updated_at)
+     VALUES ($1, DATE_TRUNC('month', NOW())::DATE, $2, NOW())
+     ON CONFLICT (organization_id, usage_month) DO UPDATE
+     SET messages_sent = organization_message_usage.messages_sent + EXCLUDED.messages_sent,
+         updated_at = NOW()`, [organizationId, count]
+  );
+}
+
 export async function getPlanUsage(organizationId: string) {
-  const [members, numbers] = await Promise.all([
+  const [members, numbers, messages] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS count FROM organization_members WHERE organization_id=$1 AND status='ACTIVE'`, [organizationId]),
     pool.query(`SELECT COUNT(*)::int AS count FROM whatsapp_accounts WHERE organization_id=$1 AND COALESCE(status,'connected') <> 'deleted'`, [organizationId]),
+    pool.query(`SELECT messages_sent::bigint AS count FROM organization_message_usage WHERE organization_id=$1 AND usage_month=DATE_TRUNC('month', NOW())::DATE LIMIT 1`, [organizationId]),
   ]);
   return {
     teamMembers: Number(members.rows[0]?.count || 0),
     whatsappNumbers: Number(numbers.rows[0]?.count || 0),
+    monthlyMessages: Number(messages.rows[0]?.count || 0),
   };
 }
 
