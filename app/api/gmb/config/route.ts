@@ -8,76 +8,39 @@ import {
     getActivityStats,
     deleteGoogleAccount,
 } from "@/lib/api/gmb/repository";
-
-//-----------------------------------------------------
-// GET — full page data: connection + config + stats
-//-----------------------------------------------------
+import { getOrganizationPlan } from "@/lib/billing/access";
 
 export async function GET() {
-
     try {
-
         const session = await getServerSession(authOptions);
-
         const organizationId = (session?.user as any)?.organizationId;
+        if (!organizationId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
-        if (!organizationId) {
-
-            return NextResponse.json(
-                { success: false, message: "Unauthorized" },
-                { status: 401 }
-            );
-
-        }
-
-        const [account, config, stats] = await Promise.all([
+        const [account, config, stats, plan] = await Promise.all([
             getGoogleAccount(organizationId),
             getConfig(organizationId),
             getActivityStats(organizationId),
+            getOrganizationPlan(organizationId),
         ]);
 
-        return NextResponse.json({
-            success: true,
-            account,
-            config,
-            stats,
-        });
-
+        return NextResponse.json({ success: true, account, config, stats, gmbAutoResponderAvailable: plan.limits.googleReviewAutoresponder });
     } catch (err: any) {
-
         console.error("GMB config GET error:", err);
-
-        return NextResponse.json(
-            { success: false, message: "Failed to load Google Reviews data." },
-            { status: 500 }
-        );
-
+        return NextResponse.json({ success: false, message: "Failed to load Google Reviews data." }, { status: 500 });
     }
-
 }
 
-//-----------------------------------------------------
-// PUT — save auto-responder config
-//-----------------------------------------------------
-
 export async function PUT(req: NextRequest) {
-
     try {
-
         const session = await getServerSession(authOptions);
-
         const organizationId = (session?.user as any)?.organizationId;
-
-        if (!organizationId) {
-
-            return NextResponse.json(
-                { success: false, message: "Unauthorized" },
-                { status: 401 }
-            );
-
-        }
+        if (!organizationId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
         const body = await req.json();
+        const plan = await getOrganizationPlan(organizationId);
+        if (body.enabled === true && !plan.limits.googleReviewAutoresponder) {
+            return NextResponse.json({ success: false, message: `Google Review Auto-Responder is not available on the ${plan.planCode} plan. Upgrade your plan to enable it.` }, { status: 403 });
+        }
 
         await upsertConfig({
             organizationId,
@@ -89,54 +52,21 @@ export async function PUT(req: NextRequest) {
         });
 
         return NextResponse.json({ success: true });
-
     } catch (err: any) {
-
         console.error("GMB config PUT error:", err);
-
-        return NextResponse.json(
-            { success: false, message: "Failed to save settings." },
-            { status: 500 }
-        );
-
+        return NextResponse.json({ success: false, message: err?.message || "Failed to save settings." }, { status: 500 });
     }
-
 }
 
-//-----------------------------------------------------
-// DELETE — disconnect Google Business account
-//-----------------------------------------------------
-
 export async function DELETE() {
-
     try {
-
         const session = await getServerSession(authOptions);
-
         const organizationId = (session?.user as any)?.organizationId;
-
-        if (!organizationId) {
-
-            return NextResponse.json(
-                { success: false, message: "Unauthorized" },
-                { status: 401 }
-            );
-
-        }
-
+        if (!organizationId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
         await deleteGoogleAccount(organizationId);
-
         return NextResponse.json({ success: true });
-
     } catch (err: any) {
-
         console.error("GMB disconnect error:", err);
-
-        return NextResponse.json(
-            { success: false, message: "Failed to disconnect." },
-            { status: 500 }
-        );
-
+        return NextResponse.json({ success: false, message: "Failed to disconnect." }, { status: 500 });
     }
-
 }
