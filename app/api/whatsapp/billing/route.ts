@@ -48,7 +48,8 @@ export async function GET(req: NextRequest) {
     }
     if (!raw) {
       if (cachedRow?.lastSyncedAt) return responseWithEstimate(cachedRow, cachedRow.lastSyncedAt, true, lastError || "Using the last successful Meta billing sync.");
-      return NextResponse.json({ success: true, available: false, billing: null, planUsage, message: lastError || "Meta billing information is unavailable for this connection.", refreshed: refresh });
+      const expired = /expired|session has expired|access token/i.test(lastError);
+      return NextResponse.json({ success: true, available: false, billing: null, planUsage, tokenExpired: expired, message: expired ? "Your Meta access token has expired. Use Reconnect in the Connection Status card to authorize WhatsApp again." : (lastError || "Meta billing information is unavailable for this connection."), refreshed: refresh });
     }
 
     const row = Array.isArray(raw?.data) ? raw.data[0] : raw;
