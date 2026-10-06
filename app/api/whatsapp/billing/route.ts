@@ -14,7 +14,12 @@ export async function GET(req: NextRequest) {
     const organizationId = (session?.user as any)?.organizationId as string | undefined;
     if (!organizationId) return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
 
-    const [account, plan, usage] = await Promise.all([getConnection(organizationId), getOrganizationPlan(organizationId), getPlanUsage(organizationId)]);
+    const [account, plan, usage] = await Promise.all([
+      getConnection(organizationId),
+      getOrganizationPlan(organizationId),
+      getPlanUsage(organizationId),
+    ]);
+
     const planLimit = plan.limits.monthlyMessages == null ? null : Number(plan.limits.monthlyMessages);
     const monthlyMessages = Number(usage.monthlyMessages || 0);
     const planUsage = {
@@ -28,7 +33,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, available: false, planUsage, message: "WhatsApp account not connected." });
     }
 
-    const token = decrypt(account.access_token);
     const refresh = req.nextUrl.searchParams.get("refresh") === "1";
     const cached = await pool.query(
       `SELECT meta_billing_balance AS balance, meta_billing_credit_available AS "creditAvailable", meta_billing_currency AS currency, meta_billing_credit_line_id AS "creditLineId", meta_billing_last_synced_at AS "lastSyncedAt" FROM whatsapp_accounts WHERE id=$1 LIMIT 1`,
@@ -69,17 +73,20 @@ export async function GET(req: NextRequest) {
       return responseWithEstimate(cachedRow, cachedRow.lastSyncedAt, true);
     }
 
-    // Meta's credit-line endpoint is a Business-level endpoint, not a WABA endpoint.
-    // The previous implementation incorrectly tried /{waba_id}/credit_lines, which
-    // produces Meta's "Unknown path components: /credit_lines" error.
-    const businessId = (account.business_id || account.business_manager_id || "").toString().trim();
-    if (!businessId) {
+    // Credit-line billing is a Solution Provider/BSP capability. The customer
+    // token issued by Embedded Signup is intentionally NOT used to read the
+    // provider's credit line. Use the provider Business + System User token.
+    const billingBusinessId = (process.env.META_BILLING_BUSINESS_ID || "").trim();
+    const billingSystemUserToken = (process.env.META_BILLING_SYSTEM_USER_TOKEN || "").trim();
+
+    if (!billingBusinessId || !billingSystemUserToken) {
       return NextResponse.json({
         success: true,
         available: false,
         billing: null,
         planUsage,
-        message: "Meta billing information is unavailable because the connected Business ID is missing.",
+        message: "Meta credit-line billing is not configured for Dispezo. Add META_BILLING_BUSINESS_ID and META_BILLING_SYSTEM_USER_TOKEN in the server environment.",
+        configurationRequired: true,
       });
     }
 
@@ -88,11 +95,12 @@ export async function GET(req: NextRequest) {
 
     try {
       raw = await metaGET<any>(
-        `/${businessId}/extendedcredits?fields=id,legal_entity_name,balance,credit_available,currency`,
-        token
+        `/${billingBusinessId}/extendedcredits?fields=id,legal_entity_name,balance,credit_available,currency,credit_type,is_access_revoked,owner_business_name`,
+        billingSystemUserToken
       );
     } catch (error: any) {
       lastError = error?.message || "Meta billing API unavailable";
+      console.error("Meta credit-line lookup failed:", lastError);
     }
 
     if (!raw) {
@@ -114,18 +122,19 @@ export async function GET(req: NextRequest) {
         billing: null,
         planUsage,
         tokenExpired: expired,
+        configurationRequired: false,
         message: expired
-          ? "Your Meta access token has expired. Use Reconnect in the Connection Status card to authorize WhatsApp again."
+          ? "The Dispezo Meta billing system-user token has expired. Update META_BILLING_SYSTEM_USER_TOKEN."
           : permission
-            ? "Meta billing balance is not available with the current WhatsApp connection credentials."
-            : "Meta billing balance is currently unavailable for this Business account.",
+            ? "The Meta billing system-user token does not have access to Dispezo's credit line. The system user needs the required business-management access on the Dispezo billing Business Portfolio."
+            : "Meta credit-line billing is currently unavailable for the Dispezo billing Business account.",
         refreshed: refresh,
       });
     }
 
     const row = Array.isArray(raw?.data) ? raw.data[0] : raw;
     if (!row) {
-      return responseWithEstimate(null, new Date().toISOString(), false, "No Meta credit line is currently associated with this Business account.");
+      return responseWithEstimate(null, new Date().toISOString(), false, "No Meta credit line is currently associated with the Dispezo billing Business account.");
     }
 
     const balance = row?.balance ?? row?.credit_available ?? row?.available_balance ?? null;
@@ -146,6 +155,9 @@ export async function GET(req: NextRequest) {
         creditLineId: row?.id || null,
         legalEntityName: row?.legal_entity_name || null,
         status: row?.status || null,
+        creditType: row?.credit_type || null,
+        accessRevoked: row?.is_access_revoked ?? null,
+        ownerBusinessName: row?.owner_business_name || null,
       },
       lastSyncedAt,
       false
