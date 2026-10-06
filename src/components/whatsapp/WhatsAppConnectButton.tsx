@@ -31,7 +31,7 @@ export default function WhatsAppConnectButton({ onConnected, compact = false, la
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const connect = () => {
+  const connect = async () => {
     if (connecting) return;
     setError('');
     const win = window as any;
@@ -39,24 +39,44 @@ export default function WhatsAppConnectButton({ onConnected, compact = false, la
     const configId = process.env.NEXT_PUBLIC_META_CONFIG_ID;
     if (!configId) { setError('Meta Embedded Signup configuration is missing.'); return; }
 
+    const isReconnect = label.toLowerCase().includes('reconnect');
+    let existingWabaId = '';
+    let existingPhoneNumberId = '';
+
+    if (isReconnect) {
+      try {
+        const statusRes = await fetch('/api/whatsapp/status', { cache: 'no-store' });
+        const status = await statusRes.json();
+        existingWabaId = status?.connection?.wabaId || '';
+        existingPhoneNumberId = status?.connection?.phoneNumberId || '';
+        if (!existingWabaId) { setError('The existing WhatsApp Business Account could not be found.'); return; }
+      } catch { setError('Unable to load the existing WhatsApp connection. Please try again.'); return; }
+    }
+
     const solutionId = process.env.NEXT_PUBLIC_META_SOLUTION_ID;
-    const extras = solutionId ? { setup: { solutionID: solutionId } } : undefined;
+    const setup: Record<string, unknown> = solutionId ? { solutionID: solutionId } : {};
+    if (isReconnect) {
+      setup.whatsAppBusinessAccount = { ids: [existingWabaId] };
+      if (existingPhoneNumberId) setup.preVerifiedPhone = { ids: [existingPhoneNumberId] };
+    }
+    const extras: Record<string, unknown> = { setup };
+    if (isReconnect) extras.featureType = 'only_waba_sharing';
 
     setConnecting(true);
     win.FB.login((response: any) => {
-      if (!response?.authResponse?.code) { setConnecting(false); setError('Meta Embedded Signup was cancelled or did not return an authorization code.'); return; }
+      if (!response?.authResponse?.code) { setConnecting(false); setError('Meta authorization was cancelled or did not return an authorization code.'); return; }
       void (async () => {
         await new Promise(resolve => setTimeout(resolve, 500));
         const embedData = (window as any).__DISPEZO_EMBED_DATA__ || {};
         try {
-          const res = await fetch('/api/onboarding/embedded-signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.authResponse.code, event: embedData.event || 'FINISH', wabaId: embedData.wabaId || null, phoneNumberId: embedData.phoneNumberId || null, businessId: embedData.businessId || null }) });
+          const res = await fetch('/api/onboarding/embedded-signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.authResponse.code, event: embedData.event || (isReconnect ? 'FINISH_ONLY_WABA' : 'FINISH'), wabaId: embedData.wabaId || existingWabaId || null, phoneNumberId: embedData.phoneNumberId || existingPhoneNumberId || null, businessId: embedData.businessId || null }) });
           const result = await res.json();
-          if (!res.ok || !result.success) throw new Error(result.error || result.message || 'Unable to complete WhatsApp onboarding.');
+          if (!res.ok || !result.success) throw new Error(result.error || result.message || 'Unable to reconnect WhatsApp.');
           onConnected?.();
-        } catch (err: any) { setError(err?.message || 'Unable to complete WhatsApp onboarding.'); }
+        } catch (err: any) { setError(err?.message || 'Unable to reconnect WhatsApp.'); }
         finally { setConnecting(false); }
       })();
-    }, { config_id: configId, auth_type: 'rerequest', response_type: 'code', override_default_response_type: true, ...(extras ? { extras } : {}) });
+    }, { config_id: configId, auth_type: 'rerequest', response_type: 'code', override_default_response_type: true, extras });
   };
 
   return <div><button type="button" onClick={connect} disabled={connecting} className={`${compact ? 'h-9 px-3 text-xs' : 'h-11 px-5 text-sm'} inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#6d28d9] to-[#3b82f6] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60`}>{connecting ? <Loader2 className="size-3.5 animate-spin" /> : <WhatsAppIcon className="size-3.5" />}{connecting ? 'Connecting…' : label}</button>{error && <p className="mt-2 max-w-sm text-xs text-red-600">{error}</p>}</div>;
